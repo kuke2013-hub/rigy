@@ -47,6 +47,29 @@ try{
   }
  }
  assert(subtlemotion,'idle clip should still contribute subtle hand motion');
+ // A manually repositioned wrist must establish a GLOBAL placement anchor,
+ // not a point attached to the animated chest that follows pelvis movement.
+ await page.evaluate(()=>window.__rigyTestReset());
+ await page.waitForTimeout(190);
+ const handDrag=await page.evaluate(()=>window.__rigyTestControllerDrag('left-wrist',[0,.028,.014]));
+ const manualBefore=(await page.evaluate(()=>window.__rigyDiagnostics())).endpointAnchors['left-wrist'];
+ console.log('MANUAL WRIST POSITION',JSON.stringify({handDrag,manualBefore}));
+ await page.evaluate(()=>window.__rigyTestControllerDrag('pelvis',[.023,.009,.010]));
+ const manualAfter=(await page.evaluate(()=>window.__rigyDiagnostics())).endpointAnchors['left-wrist'];
+ console.log('MANUAL WRIST AFTER PELVIS',JSON.stringify(manualAfter));
+ assert(dist(manualAfter.baseMetres,manualBefore.baseMetres)<.002,'manually placed hand anchor shifted with pelvis');
+ assert(manualAfter.errorMetres<.030,'manually placed hand did not stay close to anchor');
+ // Torso edits must not silently reparent the hands to the chest either.
+ await page.evaluate(()=>window.__rigyTestReset());
+ await page.waitForTimeout(190);
+ const beforeTorso=(await page.evaluate(()=>window.__rigyDiagnostics())).endpointAnchors;
+ await page.evaluate(()=>window.__rigyTestControllerDrag('torso',[.020,.010,0]));
+ const afterTorso=(await page.evaluate(()=>window.__rigyDiagnostics())).endpointAnchors;
+ for(const id of ['left-wrist','right-wrist','left-ankle','right-ankle']){
+  const e=afterTorso[id],b=beforeTorso[id];
+  assert(dist(e.baseMetres,b.baseMetres)<.020,id+' placement moved during torso edit');
+  assert(e.errorMetres<(e.kind==='foot'?.028:.030),id+' did not remain near anchor during torso edit');
+ }
  assert.deepEqual(errors,[],'uncaught page errors');
  console.log('PASS: pelvis moved while both wrists and feet retained fixed root-space placement with bounded animation offsets');
 }finally {await browser.close();}
