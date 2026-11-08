@@ -817,16 +817,19 @@ export class AnimatedPosePins {
    goal.copy(start).addScaledVector(basis.left,restricted.x)
     .addScaledVector(basis.up,restricted.y).addScaledVector(basis.forward,restricted.z);
   }else if(maxReach>EPS&&offset.length()>maxReach){goal.copy(start).add(offset.setLength(maxReach));}
+  // THREE.worldToLocal mutates its Vector3 input. Keep an untouched WORLD
+  // target for the independent hand anchor and NEVER transform a foot twice.
+  const worldGoal=goal.clone();
   const targetLocal=limb.reference.worldToLocal(goal);
   this.pins.set(limb.id,{type:'effector',targetLocal});
   if(limb.kindName==='elbow'){
    this.handAnchors.set(limb.id,{
-    targetLocal:this.anchorRoot.worldToLocal(goal.clone()).sub(this.animatedOffset(limb))
+    targetLocal:this.anchorRoot.worldToLocal(worldGoal).sub(this.animatedOffset(limb))
    });
   }
   if(limb.kindName==='knee'){
    const old=this.footAnchors.get(limb.id);
-   this.footAnchors.set(limb.id,{targetLocal:this.anchorRoot.worldToLocal(goal.clone()).sub(this.animatedOffset(limb)),orientationLocal:old.orientationLocal.clone()});
+   this.footAnchors.set(limb.id,{targetLocal:targetLocal.clone().sub(this.animatedOffset(limb)),orientationLocal:old.orientationLocal.clone()});
   }
  }
  /** Orange markers are true 3D drag points. The child wrist/ankle tries to
