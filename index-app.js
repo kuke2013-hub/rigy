@@ -318,6 +318,7 @@ window.__rigyDiagnostics = () => ({
   shoulderDiagnostics: posePins?.shoulderDiagnostics?.()||null,
   endpointAnchors: posePins?.endpointDiagnostics?.()||null,
   bodyAnchorMode: posePins?.bodyAnchorMode||false,
+  armSolveTrace: posePins?.lastBodyArmSolve||null,
    hipDiagnostics: posePins?.hipDiagnostics?.()||null,
   footErrors: posePins?.footErrors?.()||null,
   footReach: posePins?.footReachDiagnostics?.()||null,

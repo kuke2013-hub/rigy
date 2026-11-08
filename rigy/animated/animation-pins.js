@@ -1113,14 +1113,29 @@ export class AnimatedPosePins {
     const goal=this.bodyAnchorMode?this.endpointGoal(limb):limb.reference.localToWorld(p.targetLocal.clone());
     // Full two-link wrist IK is required when pelvis/torso moves beneath a
     // stationary hand. Its output is still projected through GH/shoulder ROM.
-    if(this.bodyAnchorMode)solveArmIK(limb,goal,animatedUpper.get(limb.upper));
-    else solveEffector(limb,goal,animatedUpper.get(limb.upper));
+    if(this.bodyAnchorMode){
+     const before=worldPos(limb.effector);
+     solveArmIK(limb,goal,animatedUpper.get(limb.upper));
+     const solved=worldPos(limb.effector);
+     this.lastBodyArmSolve??={};
+     this.lastBodyArmSolve[limb.id]={
+      beforeMetres:before.toArray(),goalMetres:goal.toArray(),
+      solvedMetres:solved.toArray(),solvedErrorMetres:solved.distanceTo(goal),
+      intrusionBeforeCorrection:torsoIntrusion(limb)
+     };
+    }else solveEffector(limb,goal,animatedUpper.get(limb.upper));
    }
    // Enforce segment-vs-torso exclusion AFTER all wrist/elbow manipulation.
    // This also checks an existing pinned arm as the torso animates beneath it.
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
     if(this.bodyAnchorMode||this.pins.has(limb.id)||this.pins.has(limb.id.replace('-wrist','-elbow'))){
      restrictTorsoPenetration(limb,baseArmRotations.get(limb.side));
+     if(this.bodyAnchorMode&&this.lastBodyArmSolve?.[limb.id]){
+      const sample=this.lastBodyArmSolve[limb.id];
+      sample.afterCollisionMetres=worldPos(limb.effector).toArray();
+      sample.afterCollisionErrorMetres=worldPos(limb.effector).distanceTo(V().fromArray(sample.goalMetres));
+      sample.intrusionAfterCorrection=torsoIntrusion(limb);
+     }
      const lock=this.armPoseLocks.get(limb.side);
      if(lock&&!armSolveSides.has(limb.side)){
       lock.clavicle.copy(limb.clavicle.quaternion);
