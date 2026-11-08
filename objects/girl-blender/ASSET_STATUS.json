@@ -1,0 +1,17 @@
+{
+  "name": "Girl — Blender Textured",
+  "assetPath": "models/girl-blender/gilr_blender_small_textured.glb",
+  "bytes": 73779892,
+  "sha256": "989700df8b0aceb761eedbbfd30e44b97a822f39658c4b24bddb6e70b93e8c7c",
+  "glbVersion": 2,
+  "rigBones": 65,
+  "meshVertices": 846649,
+  "meshTriangles": 299998,
+  "animations": 1,
+  "meshes": 1,
+  "skins": 1,
+  "embeddedJpeg": 1,
+  "status": "verified-binary-and-desktop-browser",
+  "notes": "Original GLB is SHA256 verified and GitHub Actions Chromium load test passed on staging; real Quest 3 headset controls remain unverified. The old grip engine is unchanged.",
+  "testRun": "https://github.com/kuke2013-hub/rigy/actions/runs/42531542916"
+}

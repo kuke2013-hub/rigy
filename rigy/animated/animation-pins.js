@@ -809,6 +809,12 @@ export class AnimatedPosePins {
    if(axis.lengthSq()<EPS)axis.set(1,0,0);
    limb.hingeAxisLocal=axis.applyQuaternion(worldQ(limb.hinge).invert()).normalize();
    limb.initialBend=hingeFlexAngle(limb,limb.hingeAxisLocal.clone().applyQuaternion(worldQ(limb.hinge)));
+   // Per-character calibration: a nearly straight joint can return a tiny
+   // negative angle from floating point noise. Clamp ONLY within the explicit
+   // model-specific epsilon; substantial hyperextension still fails closed.
+   const epsilon=this.avatar.userData.rigyNearStraightHingeToleranceRad;
+   if(Number.isFinite(epsilon)&&epsilon>0&&epsilon<=0.00001 &&
+      limb.initialBend<0&&limb.initialBend>=-epsilon)limb.initialBend=0;
    limb.markerBone=limb.kind==='effector'?limb.effector:limb.hinge;
    }
    const material=markerMaterial(limb.kind);
