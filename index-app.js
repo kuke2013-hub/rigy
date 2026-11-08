@@ -342,6 +342,29 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
     posePins.storeTarget(limb,target);
     return {target:target.toArray(),pinCount:posePins.pins.size};
   };
+  // Direct anatomical overhead target. Unlike global XYZ offsets, this
+  // requests a known 160° total elevation in the current moving torso frame.
+  window.__rigyTestOverhead=(id,elevation=160,plane='forward')=>{
+    if(!posePins||!Number.isFinite(elevation)||elevation<0||elevation>180)
+      throw new Error('Invalid shoulder test');
+    const limb=posePins.limbs.find(l=>l.id===id&&l.kind==='effector'&&l.kindName==='elbow');
+    if(!limb)throw new Error('Arm joint missing: '+id);
+    avatar.updateMatrixWorld(true);
+    const p=limb.shoulderContext;
+    const world=b=>b.getWorldPosition(new THREE.Vector3());
+    const up=world(p.spine).sub(world(p.hips)).normalize();
+    const left=world(p.leftShoulder).sub(world(p.rightShoulder));
+    left.addScaledVector(up,-left.dot(up)).normalize();
+    const forward=left.clone().cross(up).normalize();
+    const a=THREE.MathUtils.degToRad(elevation);
+    const tangent=plane==='lateral'?left.multiplyScalar(limb.side==='left'?1:-1):forward;
+    const direction=up.multiplyScalar(-Math.cos(a)).addScaledVector(tangent,Math.sin(a)).normalize();
+    const shoulder=world(limb.upper),elbow=world(limb.hinge),wrist=world(limb.effector);
+    const maxReach=shoulder.distanceTo(elbow)+elbow.distanceTo(wrist);
+    const goal=shoulder.clone().addScaledVector(direction,maxReach*0.98);
+    posePins.storeTarget(limb,goal);posePins.update();
+    return {id,plane,elevation,goal:goal.toArray(),reach:maxReach};
+  };
   // Browser regression: emulate a controller's physical translation while
   // preserving its grab's initial world position. The public page has no hook.
   window.__rigyTestControllerDrag=(id,offset) => {
