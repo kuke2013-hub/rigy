@@ -1,0 +1,20 @@
+{
+  "id": "laying-breathless",
+  "title": "Laying Breathless",
+  "format": "FBX-binary",
+  "model": "laying-breathless.fbx",
+  "texture": "laying-breathless.jpg",
+  "originalModelName": "Laying Breathless.fbx",
+  "originalTextureName": "Laying Breathless.jpg",
+  "bytes": 28177072,
+  "sha256": "3bc1818136bba47dc54ce838ed120276def9cbed6949f8da3f360565fc77457b",
+  "textureSha256": "925150f8e0c9fd05d4b3ec449508bf9ca8ef781b943e1f81335e20f4663985f0",
+  "boneCount": 65,
+  "skinClusters": 52,
+  "controlPoints": 304203,
+  "polygons": 337401,
+  "trianglesAfterFan": 608406,
+  "animationDurationSeconds": 0.8333333333333334,
+  "publicationStatus": "binary-and-texture-pending",
+  "notes": "Viewer page supports manual local FBX and JPEG import; source binary was not uploaded through the text-only GitHub connector; Quest hardware untested."
+}

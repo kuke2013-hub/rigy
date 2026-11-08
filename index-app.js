@@ -94,6 +94,26 @@ const physicsReady=createGrabPhysics({renderer,rig,modelAnchor,onStatus:setStatu
 const glbLoader=new GLTFLoader();
 const objLoader=new OBJLoader();
 const fbxLoader=new FBXLoader();
+const featuredRig=window.RIGY_FEATURED_RIG||null;
+let featuredAtlas=null;
+// Optional per-character surface; original mesh, skin, UVs and bind skeleton are untouched.
+function applyFeaturedAtlas(root,texture){
+  if(!featuredRig||!texture)return;
+  texture.colorSpace=THREE.SRGBColorSpace;
+  root.traverse(part=>{
+    if(!part.isMesh||!part.geometry?.attributes?.uv)return;
+    const apply=material=>{
+      const revised=(material?.isMaterial?material.clone():new THREE.MeshPhongMaterial());
+      revised.name='Laying Breathless source atlas';
+      if(revised.color)revised.color.set(0xffffff);
+      revised.map=texture;
+      revised.needsUpdate=true;
+      return revised;
+    };
+    part.material=Array.isArray(part.material)?part.material.map(apply):apply(part.material);
+  });
+}
+
 
 /** RIGY-V0157: Featured model's glossy charcoal/silver surface.
  * User image is a render/reference, not a UV-unwrapped texture atlas.
@@ -159,6 +179,7 @@ function installObject(root,label='Object',clips=[]) {
   if(avatar)modelAnchor.remove(avatar);
   avatar=root;
   root.position.sub(centre);
+  if(featuredRig&&featuredAtlas)applyFeaturedAtlas(root,featuredAtlas);
   root.traverse(part=>{
     if(part.isMesh){part.castShadow=false;part.receiveShadow=false;}
   });
@@ -193,18 +214,49 @@ function loadObject(url,filename) {
 async function loadFeaturedRig(){
   if(modelLoading)return;modelLoading=true;
   try{
-    const binary=await loadBundledFbx('models/standing-idle/manifest.json',(count,total,bytes)=>{
-      setStatus(`Loading character: part ${count}/${total} (${(bytes/1048576).toFixed(2)} MiB transferred)…`);
-    });
-    setStatus('Parsing rig, mesh and all animation tracks…');
-    const root=fbxLoader.parse(binary,'./models/standing-idle/');
-    applyReferenceFinish(root);
-    installObject(root,'Standing W_Briefcase Idle.fbx',root.animations||[]);
-  }catch(error){console.error(error);setStatus(`Automatic model import failed: ${error.message}. Choose the FBX locally as a fallback.`);}
+    if(featuredRig){
+      const modelURL=new URL(featuredRig.assetUrl,location.href);
+      const response=await fetch(modelURL,{cache:'no-cache'});
+      if(!response.ok)throw new Error('FBX asset HTTP '+response.status);
+      const binary=await response.arrayBuffer();
+      if(binary.byteLength!==featuredRig.bytes)throw new Error('FBX size mismatch');
+      const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',binary));
+      const actual=[...hash].map(x=>x.toString(16).padStart(2,'0')).join('');
+      if(actual!==featuredRig.sha256)throw new Error('FBX SHA-256 mismatch');
+      setStatus('Parsing original Mixamo rig, skin weights and animation…');
+      const root=fbxLoader.parse(binary,new URL('./',modelURL).href);
+      if(featuredRig.textureUrl){
+        try{featuredAtlas=await new THREE.TextureLoader().loadAsync(new URL(featuredRig.textureUrl,location.href).href);}
+        catch(error){console.warn('Texture atlas unavailable',error);}
+      }
+      installObject(root,featuredRig.title||'Character',root.animations||[]);
+    }else{
+      const binary=await loadBundledFbx('models/standing-idle/manifest.json',(count,total,bytes)=>{
+        setStatus(`Loading character: part ${count}/${total} (${(bytes/1048576).toFixed(2)} MiB transferred)…`);
+      });
+      setStatus('Parsing rig, mesh and all animation tracks…');
+      const root=fbxLoader.parse(binary,'./models/standing-idle/');
+      applyReferenceFinish(root);
+      installObject(root,'Standing W_Briefcase Idle.fbx',root.animations||[]);
+    }
+  }catch(error){console.error(error);setStatus(`Automatic model import failed: ${error.message}. Select the original FBX locally (and the JPEG texture if needed).`);}
   finally{modelLoading=false;}
 }
 loadFeaturedRig();
 
+// An optional manual atlas picker exists on the isolated Laying Breathless page.
+$('textureFile')?.addEventListener('change',async event=>{
+  const file=event.target.files?.[0];
+  if(!file||!featuredRig)return;
+  if(!file.type.startsWith('image/')){setStatus('Choose the original JPEG texture atlas.');return;}
+  const uri=URL.createObjectURL(file);
+  try{
+    featuredAtlas=await new THREE.TextureLoader().loadAsync(uri);
+    if(avatar)applyFeaturedAtlas(avatar,featuredAtlas);
+    setStatus('Source texture atlas applied to the skinned character.');
+  }catch(error){console.error(error);setStatus('Texture failed to load: '+error.message);}
+  finally{URL.revokeObjectURL(uri);}
+});
 $('assetFile').addEventListener('change',event=>{
   const file=event.target.files?.[0];
   if(!file)return;
