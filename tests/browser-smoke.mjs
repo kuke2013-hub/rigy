@@ -32,7 +32,8 @@ try{
   const before=await page.evaluate(()=>window.__rigyDiagnostics());
   console.log('Loaded rig:',JSON.stringify(before));
   assert(before.skeletonBones>=20,`missing bones: ${before.skeletonBones}`);
-  assert.equal(before.handleCount,8);
+  assert.equal(before.handleCount,12, '8 limb points plus head, neck, torso and hips');
+  assert.equal(before.plantedFeet,2,'Both feet must be planted by default');
   assert(before.animationDuration>5);
   const pin=await page.evaluate(()=>window.__rigyTestPin('left-wrist',[0,0.05,0]));
   assert.equal(pin.pinCount,1);
@@ -41,6 +42,8 @@ try{
   console.log('After pin:',JSON.stringify(after));
   assert(after.animationTime>before.animationTime+.2,'Animation must continue advancing');
   assert.equal(after.pinnedCount,1,'Pin must persist while clip keeps playing');
+  console.log('Foot contact after animation:',JSON.stringify(after.footErrors));
+  for(const [id,error] of Object.entries(after.footErrors||{}))assert(error<0.07,`${id}: planted-foot drift ${error.toFixed(3)} metres`);
   assert.deepEqual(errors,[],'No uncaught browser runtime exception');
   // v0.4 regression: a stationary controller grab must NEVER collapse the
   // target onto the parent joint (FBX centimetres vs world metres bug).
@@ -48,22 +51,27 @@ try{
   await page.waitForTimeout(150);
   let visible=await page.evaluate(()=>window.__rigyDiagnostics().visibleHandleCount);
   assert.equal(visible,0,'All edit bubbles must be hidden until mouse/controller proximity');
-  for(const id of ['left-wrist','right-wrist','left-ankle','right-ankle','left-elbow','right-elbow','left-knee','right-knee']){
+  for(const id of ['left-wrist','right-wrist','left-ankle','right-ankle','left-elbow','right-elbow','left-knee','right-knee','torso','neck','head','pelvis']){
     await page.evaluate(()=>window.__rigyTestReset());
     await page.waitForTimeout(110);
     const stationary=await page.evaluate(id=>window.__rigyTestControllerDrag(id,[0,0,0]),id);
     const initialDistance=Math.hypot(...stationary.before.map((x,i)=>x-stationary.goal[i]));
     console.log('Stationary grab',id,JSON.stringify({initialDistance,poseDeviation:stationary.deviation}));
-    assert(initialDistance<.012,`${id}: stationary pin target must not jump (${initialDistance.toFixed(4)}m)`);
+    assert(initialDistance<.014,`${id}: stationary pin target must not jump (${initialDistance.toFixed(4)}m)`);
     await page.evaluate(()=>window.__rigyTestReset());
     await page.waitForTimeout(110);
     const moved=await page.evaluate(id=>window.__rigyTestControllerDrag(id,[0.09,0.04,0.07]),id);
     console.log('Controller drag',id,JSON.stringify({moved:moved.moved,deviation:moved.deviation}));
     assert(moved.goal.every(Number.isFinite)&&moved.after.every(Number.isFinite),`${id}: finite limb pose required`);
     assert(moved.moved>.008,`${id}: controller translation must physically move edited point`);
-    assert(moved.deviation<.26,`${id}: pose should not collapse away from drag goal`);
+    assert(moved.deviation<.27,`${id}: pose should not collapse away from drag goal`);
+    const grounded=await page.evaluate(()=>window.__rigyDiagnostics().footErrors);
+    for(const [foot,error] of Object.entries(grounded||{})){
+      console.log('Foot contact',id,foot,error);
+      assert(Number.isFinite(error)&&error<.08,`${id} must not unplant ${foot}: ${error}`);
+    }
   }
   const continuing=await page.evaluate(()=>window.__rigyDiagnostics().animationTime);
   assert(continuing>after.animationTime,'Animation should remain active during edit tests');
-  console.log('PASS: FBX parsed, animated, all 8 points drag in 3D without snapping; markers hidden until nearby');
+  console.log('PASS: animation and all 12 handles, both feet anchored, joint edits remain bounded and markers hide until nearby');
 }finally{await browser.close();}

@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 
 /**
- * Rigy 0.2 experimental animated-pose overlay.
+ * Rigy 0.5 grounded animated-pose overlay.
  * Important update order: AnimationMixer.update() -> PosePins.update() -> render.
- * Pins are expressed in a moving spine/hip frame; animation never gets paused
- * or deleted. A trigger drag edits only the selected chain and the pose is
- * reapplied every frame after the Mixamo clip updates the bones.
+ * Limb and body targets live in the unanimated model-anchor frame. Two planted
+ * feet remain in that frame while the pelvis, spine and other animated bones
+ * adjust to reach them. The source clip itself is never edited.
  *
  * Per-bone hinge axes are inferred from first animated pose and body anterior,
  * NOT medically validated anatomical calibration. Shoulder clamps are
@@ -20,6 +20,30 @@ const EPS=1e-7;
 // Markers should appear only around a real nearby Quest controller.
 const HANDLE_NEAR_METRES=0.30;
 const DESKTOP_HOVER_PIXELS=26;
+// Provisional RIG-SPECIFIC engineering limits on the added pose relative to
+// the running animation. These are deliberately NOT claimed as medical per-bone
+// maxima; aggregate cervical/shoulder clinical ranges cannot be assigned to
+// each of these FBX bones.
+const BODY_DELTA_LIMIT_DEG={Spine:12,Spine1:12,Spine2:16,Neck:34,Head:24};
+const FEET=['left-ankle','right-ankle'];
+const HIP_MAX_ROOT_SHIFT=0.65; // metres: posture is bounded by the two planted legs
+function worldToParentPosition(bone,targetWorld){
+ const parent=bone.parent; if(!parent)return;
+ parent.updateWorldMatrix(true,false);
+ bone.position.copy(parent.worldToLocal(targetWorld.clone()));
+ bone.updateMatrixWorld(true);
+}
+function shiftBoneWorld(bone,delta){
+ if(delta.lengthSq()<1e-16)return;
+ worldToParentPosition(bone,worldPos(bone).add(delta));
+}
+function limitToAnimated(bone,animated,limitDeg){
+ if(!animated)return;
+ let angle=animated.angleTo(bone.quaternion);
+ if(angle>limitDeg*RAD){const candidate=bone.quaternion.clone();bone.quaternion.copy(animated).slerp(candidate,limitDeg*RAD/angle);}
+ bone.updateMatrixWorld(true);
+}
+
 
 function worldQ(bone) { const q=Q();bone.getWorldQuaternion(q);return q; }
 function worldPos(bone) {const v=V();bone.getWorldPosition(v);return v;}
@@ -47,10 +71,10 @@ function makeMixamoMaps(avatar,profiles) {
  for(const side of ['Left','Right']) {
   const upperArm=pickBone(avatar,`${side}Arm`), forearm=pickBone(avatar,`${side}ForeArm`),hand=pickBone(avatar,`${side}Hand`);
   const thigh=pickBone(avatar,`${side}UpLeg`),shin=pickBone(avatar,`${side}Leg`),foot=pickBone(avatar,`${side}Foot`);
-  limbs.push({id:`${side.toLowerCase()}-wrist`,kind:'effector',label:`${side} wrist · lift arm`,reference:spine,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:120});
-  limbs.push({id:`${side.toLowerCase()}-elbow`,kind:'bend',label:`${side} elbow · bend`,reference:spine,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:120});
-  limbs.push({id:`${side.toLowerCase()}-ankle`,kind:'effector',label:`${side} ankle · lift foot`,reference:hips,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:115});
-  limbs.push({id:`${side.toLowerCase()}-knee`,kind:'bend',label:`${side} knee · bend`,reference:hips,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:115});
+  limbs.push({id:`${side.toLowerCase()}-wrist`,kind:'effector',label:`${side} wrist · lift arm`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:100});
+  limbs.push({id:`${side.toLowerCase()}-elbow`,kind:'bend',label:`${side} elbow · bend`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:100});
+  limbs.push({id:`${side.toLowerCase()}-ankle`,kind:'effector',label:`${side} ankle · lift foot`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
+  limbs.push({id:`${side.toLowerCase()}-knee`,kind:'bend',label:`${side} knee · bend`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
  }
  return limbs;
 }
@@ -160,7 +184,42 @@ function aimHingeChild(limb,tipGoal){
  turnHinge(limb,clamp(angle,-0.4,0.4));
 }
 
-function markerMaterial(kind){return new THREE.MeshBasicMaterial({color:kind==='bend'?0xf6b874:0x76e1d1,transparent:true,opacity:0.85,depthTest:false});}
+function markerMaterial(kind){return new THREE.MeshBasicMaterial({color:kind==='bend'?0xf6b874:kind==='body'?0xb7a3f5:kind==='pelvis'?0xc8eaa0:0x76e1d1,transparent:true,opacity:0.85,depthTest:false});}
+
+// The three requested new controls are real 3D targets, NOT unrestricted bone
+// rotations. Each grip steers a short calibrated chain with a conservative
+// per-segment quaternion angle bound measured from that animation frame.
+function makeBodyHandles(avatar){
+ const base=avatar.parent||avatar;
+ const spine=pickBone(avatar,'Spine'),spine1=pickBone(avatar,'Spine1');
+ const spine2=pickBone(avatar,'Spine2'),neck=pickBone(avatar,'Neck');
+ const head=pickBone(avatar,'Head'),hips=pickBone(avatar,'Hips');
+ return [
+  {id:'torso',kind:'body',label:'Torso · bend / lean',reference:base,markerBone:spine2,chain:[spine1,spine],maxMove:0.28},
+  {id:'neck',kind:'body',label:'Neck · bend / turn',reference:base,markerBone:neck,chain:[spine2,spine1,spine],maxMove:0.20},
+  {id:'head',kind:'body',label:'Head · turn / tilt',reference:base,markerBone:head,chain:[head,neck,spine2],maxMove:0.26,headTip:true},
+  {id:'pelvis',kind:'pelvis',label:'Hips · shift above planted feet',reference:base,markerBone:hips,maxMove:HIP_MAX_ROOT_SHIFT}
+ ];
+}
+function steerBodyHandle(handle,desired,animated){
+ // Every iteration projects each proposed rotation back inside its permitted
+ // angular deviation, preventing unbounded 360-degree spine/neck twisting.
+ for(let pass=0;pass<5;pass++){
+  for(const bone of handle.chain){
+   bone.updateWorldMatrix(true,true);
+   const pivot=worldPos(bone),tip=worldPos(handle.marker);
+   const from=tip.sub(pivot),to=desired.clone().sub(pivot);
+   if(from.lengthSq()<1e-12||to.lengthSq()<1e-12)continue;
+   const delta=Q().setFromUnitVectors(from.normalize(),to.normalize());
+   delta.slerp(Q(),0.52); // damped CCD to avoid hand-tracking jitter
+   const goal=delta.multiply(worldQ(bone));
+   const local=worldQ(bone.parent).invert().multiply(goal).normalize();
+   bone.quaternion.copy(local);
+   limitToAnimated(bone,animated.get(bone),BODY_DELTA_LIMIT_DEG[bone.name.replace(/^.*?(Spine2|Spine1|Spine|Neck|Head).*$/, '$1')]||20);
+  }
+ }
+}
+
 
 export class AnimatedPosePins {
  constructor({avatar,renderer,camera,controls,medicalProfiles,onStatus=()=>{}}){
@@ -168,6 +227,11 @@ export class AnimatedPosePins {
   this.pins=new Map();this.handles=new Map();this.active=null;this.enabled=true;this.visible=true;
   this.pointerScreen=null;this.hovered=null;
   this.limbs=makeMixamoMaps(avatar,medicalProfiles);
+  this.bodyHandles=makeBodyHandles(avatar);
+  this.anchorRoot=avatar.parent||avatar;
+  this.hips=pickBone(avatar,'Hips');
+  this.footAnchors=new Map();
+  this.reanchorNextFrame=false;
   this.controllers=[renderer.xr.getController(0),renderer.xr.getController(1)];
   this.listeners=[];
   // The first animated frame is the calibration reference. A custom GLB rig
@@ -175,7 +239,9 @@ export class AnimatedPosePins {
   // is not sufficient for arbitrary human rigs.
   avatar.updateMatrixWorld(true);
   const hips=pickBone(avatar,'Hips'); const forward=V().set(0,0,1).applyQuaternion(worldQ(hips));
-  for(const limb of this.limbs){
+  this.captureFootAnchors();
+  for(const limb of [...this.limbs,...this.bodyHandles]){
+   if(limb.kind==='effector'||limb.kind==='bend'){
    const direction=worldPos(limb.hinge).sub(worldPos(limb.upper)).normalize();
    const expected=forward.clone().multiplyScalar(limb.kindName==='knee'?-1:1);
    let axis=direction.clone().cross(expected).normalize();
@@ -183,6 +249,7 @@ export class AnimatedPosePins {
    limb.hingeAxisLocal=axis.applyQuaternion(worldQ(limb.hinge).invert()).normalize();
    limb.initialBend=hingeFlexAngle(limb,limb.hingeAxisLocal.clone().applyQuaternion(worldQ(limb.hinge)));
    limb.markerBone=limb.kind==='effector'?limb.effector:limb.hinge;
+   }
    const material=markerMaterial(limb.kind);
    const marker=new THREE.Mesh(new THREE.SphereGeometry(1,12,10),material);
    // FBX bones may be in centimetres: keep the marker ~2.7cm in the room,
@@ -191,7 +258,12 @@ export class AnimatedPosePins {
    marker.scale.set(0.027/Math.max(1e-8,Math.abs(ws.x)),0.027/Math.max(1e-8,Math.abs(ws.y)),0.027/Math.max(1e-8,Math.abs(ws.z)));
    marker.name='RigyGrip:'+limb.id;
    marker.renderOrder=250;marker.userData.poseHandle=limb;
-   limb.markerBone.add(marker);marker.position.set(0,0,0);marker.visible=false;
+   limb.markerBone.add(marker);marker.position.set(0,0,0);
+   if(limb.headTip){
+    const crown=worldPos(limb.markerBone).add(V().set(0,0.085,0));
+    marker.position.copy(limb.markerBone.worldToLocal(crown));
+   }
+   limb.marker=marker;marker.visible=false;
    this.handles.set(limb.id,marker);
   }
   for(const controller of this.controllers){
@@ -208,9 +280,20 @@ export class AnimatedPosePins {
   renderer.domElement.addEventListener('pointerleave',this.pointerLeave);
   window.addEventListener('pointerup',this.pointerUp);
  }
+ captureFootAnchors(){
+  this.avatar.updateMatrixWorld(true);
+  this.anchorRoot.updateWorldMatrix(true,false);
+  const anchorQ=worldQ(this.anchorRoot).invert();
+  for(const limb of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='knee')){
+   this.footAnchors.set(limb.id,{
+    targetLocal:this.anchorRoot.worldToLocal(worldPos(limb.effector)),
+    orientationLocal:anchorQ.clone().multiply(worldQ(limb.effector))
+   });
+  }
+ }
  setVisible(v){this.visible=!!v;this.updateVisibility();}
  setEnabled(v){this.enabled=!!v;if(!v)this.active=null;}
- reset(){this.pins.clear();this.active=null;}
+ reset(){this.pins.clear();this.active=null;this.reanchorNextFrame=true;}
  destroy(){for(const release of this.listeners)release();this.listeners=[];
   this.renderer.domElement.removeEventListener('pointerdown',this.pointerDown);
   this.renderer.domElement.removeEventListener('pointermove',this.pointerMove);
@@ -283,11 +366,14 @@ export class AnimatedPosePins {
  begin(limb,controller=null,screenPoint=null){
   if(!this.enabled||!limb)return;
   const initial=this.pins.get(limb.id);
-  const target=initial?.targetLocal?limb.reference.localToWorld(initial.targetLocal.clone()):worldPos(limb.markerBone);
+  const target=initial?.targetLocal?limb.reference.localToWorld(initial.targetLocal.clone())
+   :limb.kind==='effector'&&limb.kindName==='knee'&&this.footAnchors.has(limb.id)
+    ?this.anchorRoot.localToWorld(this.footAnchors.get(limb.id).targetLocal.clone())
+    :worldPos(limb.marker||limb.markerBone);
   const origin=controller?worldPos(controller):worldPos(this.camera);
   const dir=controller?V().set(0,0,-1).applyQuaternion(worldQ(controller)):V().subVectors(target,origin).normalize();
-  const initialBend=initial?.bendDegrees??THREE.MathUtils.radToDeg(limb.initialBend);
-  const holdTipLocal=initial?.holdTipLocal?.clone()||limb.reference.worldToLocal(worldPos(limb.effector));
+  const initialBend=initial?.bendDegrees??THREE.MathUtils.radToDeg(limb.initialBend||0);
+  const holdTipLocal=initial?.holdTipLocal?.clone()||limb.reference.worldToLocal(worldPos(limb.effector||limb.markerBone));
   this.active={limb,controller,screenPoint,origin,dir,initialWorld:target.clone(),reach:target.distanceTo(origin),initialBend,holdTipLocal};
   this.onStatus(`${limb.label}: move controller / mouse to set pose; release to pin while idle animation continues.`);
  }
@@ -321,6 +407,7 @@ export class AnimatedPosePins {
   const t=depth/Math.max(0.02,rayDir.dot(forward));
   const target=origin.addScaledVector(rayDir,t);
   if(limb.kind==='bend')this.storeHingeTarget(limb,target,s.holdTipLocal);
+  else if(limb.kind==='body'||limb.kind==='pelvis')this.storeBodyTarget(limb,target);
   else this.storeTarget(limb,target);
  }
  onPointerUp(){if(this.active&&!this.active.controller){this.active=null;this.controls.enabled=true;}}
@@ -333,8 +420,13 @@ export class AnimatedPosePins {
   const start=worldPos(limb.upper),joint=worldPos(limb.hinge),tip=worldPos(limb.effector);
   const maxReach=start.distanceTo(joint)+joint.distanceTo(tip);
   const goal=target.clone(),offset=goal.clone().sub(start);
-  if(maxReach>EPS&&offset.length()>maxReach){goal.copy(start).add(offset.setLength(maxReach));}
-  this.pins.set(limb.id,{type:'effector',targetLocal:limb.reference.worldToLocal(goal)});
+  if(limb.kindName!=='knee'&&maxReach>EPS&&offset.length()>maxReach){goal.copy(start).add(offset.setLength(maxReach));}
+  const targetLocal=limb.reference.worldToLocal(goal);
+  this.pins.set(limb.id,{type:'effector',targetLocal});
+  if(limb.kindName==='knee'){
+   const old=this.footAnchors.get(limb.id);
+   this.footAnchors.set(limb.id,{targetLocal:targetLocal.clone(),orientationLocal:old.orientationLocal.clone()});
+  }
  }
  /** Orange markers are true 3D drag points. The child wrist/ankle tries to
   * remain where it was at grab start, so moving the knee can flex the shin.
@@ -351,6 +443,29 @@ export class AnimatedPosePins {
   this.pins.set(limb.id,{type:'bend',targetLocal:limb.reference.worldToLocal(projected),
    holdTipLocal:holdTipLocal?.clone()||existing?.holdTipLocal?.clone()||limb.reference.worldToLocal(worldPos(limb.effector))});
  }
+ storeBodyTarget(handle,target){
+  handle.reference.updateWorldMatrix(true,false);
+  const current=worldPos(handle.marker);
+  const reference=this.pins.get(handle.id)?.originalLocal||handle.reference.worldToLocal(current);
+  const original=handle.reference.localToWorld(reference.clone());
+  const move=target.clone().sub(original);
+  if(move.length()>handle.maxMove)move.setLength(handle.maxMove);
+  this.pins.set(handle.id,{type:'body',originalLocal:reference.clone(),targetLocal:handle.reference.worldToLocal(original.add(move))});
+ }
+ footErrors(){
+  this.avatar.updateMatrixWorld(true);
+  const errors={};
+  for(const id of FEET){
+   const l=this.limbs.find(x=>x.id===id);
+   const point=this.footAnchors.get(id);
+   if(l&&point)errors[id]=worldPos(l.effector).distanceTo(this.anchorRoot.localToWorld(point.targetLocal.clone()));
+  }
+  return errors;
+ }
+ moveHips(delta){
+  if(delta.length()>HIP_MAX_ROOT_SHIFT)delta.setLength(HIP_MAX_ROOT_SHIFT);
+  shiftBoneWorld(this.hips,delta);
+ }
  update(){
   if(!this.enabled)return;
   const s=this.active;
@@ -365,34 +480,90 @@ export class AnimatedPosePins {
     const aimChange=dir.sub(s.dir).multiplyScalar(Math.min(s.reach,1)*0.5);
     target.add(aimChange);
     this.storeTarget(limb,target);
-   }else this.storeHingeTarget(limb,target,s.holdTipLocal);
+   }else if(limb.kind==='bend')this.storeHingeTarget(limb,target,s.holdTipLocal);
+   else this.storeBodyTarget(limb,target);
   }
-  // Snapshot fresh animated shoulder/hip rotations *before* imposing pins.
-  // AnimationMixer has just written these values. Every frame we re-solve.
-  const animatedUpper=new Map(this.limbs.map(l=>[l.upper,l.upper.quaternion.clone()]));
-  this.avatar.updateMatrixWorld(true);
-  // Move each orange elbow/knee marker in 3D. The upper bone steers the
-  // hinge, while the lower hinge rotates to keep the wrist/ankle close to its
-  // world position at the beginning of the drag (in moving body coordinates).
-  for(const limb of this.limbs){
-   const p=this.pins.get(limb.id);
-   if(!p||p.type!=='bend'||!p.targetLocal)continue;
-   limb.reference.updateWorldMatrix(true,false);
-   const goal=limb.reference.localToWorld(p.targetLocal.clone());
-   steerHingePosition(limb,goal,animatedUpper.get(limb.upper));
-   const tipGoal=limb.reference.localToWorld(p.holdTipLocal.clone());
-   aimHingeChild(limb,tipGoal);
-  }
-  for(const limb of this.limbs){
-   const p=this.pins.get(limb.id);
-   if(!p||p.type!=='effector')continue;
-   limb.reference.updateWorldMatrix(true,false);
-   const goal=limb.reference.localToWorld(p.targetLocal.clone());
-   const hingeIsPinned=this.pins.has(limb.id.replace(/-wrist$/,'-elbow').replace(/-ankle$/,'-knee'));
-   if(hingeIsPinned)aimHingeChild(limb,goal);
-   else solveEffector(limb,goal,animatedUpper.get(limb.upper));
-  }
-  this.avatar.updateMatrixWorld(true);
+   // Fresh animated base first: the mixer already wrote a new pose. A reset
+   // reanchors to *that* animated frame, not the previously IK-adjusted frame.
+   this.avatar.updateMatrixWorld(true);
+   if(this.reanchorNextFrame){this.captureFootAnchors();this.reanchorNextFrame=false;}
+   const animatedUpper=new Map(this.limbs.map(l=>[l.upper,l.upper.quaternion.clone()]));
+   const animatedBody=new Map();
+   for(const h of this.bodyHandles)for(const bone of h.chain||[])animatedBody.set(bone,bone.quaternion.clone());
+   // Character's animated hip bob and root translation are compensated by the
+   // two planted feet. Hips and torso can still move within leg reach via IK.
+   const corrections=[];
+   for(const limb of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='knee')){
+    const foot=this.footAnchors.get(limb.id);
+    if(foot)corrections.push(this.anchorRoot.localToWorld(foot.targetLocal.clone()).sub(worldPos(limb.effector)));
+   }
+   if(corrections.length){
+    const average=corrections.reduce((a,b)=>a.add(b),V()).divideScalar(corrections.length);
+    this.moveHips(average);
+   }
+   // Direct hip/pelvis manipulation moves the whole character above the feet;
+   // it never drags the planted foot locations along with the hips.
+   const pelvisHandle=this.bodyHandles.find(h=>h.kind==='pelvis');
+   const pelvisPin=this.pins.get('pelvis');
+   if(pelvisPin?.targetLocal){
+    const goal=this.anchorRoot.localToWorld(pelvisPin.targetLocal.clone());
+    const delta=goal.sub(worldPos(this.hips));
+    this.moveHips(delta);
+   }
+   // Knee handles influence the pelvis as well as the upper leg, otherwise
+   // fixed-length hip/knee/foot triangle can't change its bend with two fixed
+   // endpoints. Limit shift to an attainable lean, then recover foot contact.
+   const kneeGoals=[];
+   for(const l of this.limbs.filter(l=>l.kind==='bend'&&l.kindName==='knee')){
+    const p=this.pins.get(l.id);
+    if(p?.targetLocal)kneeGoals.push(this.anchorRoot.localToWorld(p.targetLocal.clone()).sub(worldPos(l.hinge)));
+   }
+   if(kneeGoals.length&&!pelvisPin){
+    const delta=kneeGoals.reduce((a,b)=>a.add(b),V()).divideScalar(kneeGoals.length).multiplyScalar(0.36);
+    if(delta.length()>0.24)delta.setLength(0.24);
+    this.moveHips(delta);
+   }
+   // Torso, neck and head offsets apply on top of the idle animation and are
+   // bounded per vertebral group by conservative rig-specific angular caps.
+   for(const h of this.bodyHandles.filter(h=>h.kind==='body')){
+    const p=this.pins.get(h.id);if(!p?.targetLocal)continue;
+    const desired=this.anchorRoot.localToWorld(p.targetLocal.clone());
+    steerBodyHandle(h,desired,animatedBody);
+   }
+   // Leg contact priority: knee position is a secondary constraint while
+   // BOTH feet always have world/model-anchor-space position goals.
+   for(let pass=0;pass<2;pass++){
+    for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='bend')){
+     const pin=this.pins.get(limb.id);
+     if(!pin?.targetLocal)continue;
+     const goal=this.anchorRoot.localToWorld(pin.targetLocal.clone());
+     steerHingePosition(limb,goal,animatedUpper.get(limb.upper));
+    }
+    for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='effector')){
+     const anchor=this.footAnchors.get(limb.id);
+     if(!anchor)continue;
+     const goal=this.anchorRoot.localToWorld(anchor.targetLocal.clone());
+     solveEffector(limb,goal,animatedUpper.get(limb.upper));
+     // Preserve foot world orientation (no planted-foot spinning during idle).
+     const desiredWorld=worldQ(this.anchorRoot).multiply(anchor.orientationLocal);
+     const parentQ=worldQ(limb.effector.parent).invert();
+     limb.effector.quaternion.copy(parentQ.multiply(desiredWorld).normalize());
+     limb.effector.updateMatrixWorld(true);
+    }
+   }
+   // Upper limbs are lower-priority than the grounded legs and body. Elbows
+   // use a constrained hinge; shoulders use bounded swing from animation.
+   for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='bend')){
+    const p=this.pins.get(limb.id);if(!p?.targetLocal)continue;
+    const goal=this.anchorRoot.localToWorld(p.targetLocal.clone());
+    steerHingePosition(limb,goal,animatedUpper.get(limb.upper));
+   }
+   for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
+    const p=this.pins.get(limb.id);if(!p?.targetLocal)continue;
+    const goal=this.anchorRoot.localToWorld(p.targetLocal.clone());
+    solveEffector(limb,goal,animatedUpper.get(limb.upper));
+   }
+   this.avatar.updateMatrixWorld(true);
   this.updateVisibility();
  }
 }

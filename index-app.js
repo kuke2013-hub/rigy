@@ -4,7 +4,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './VR_OBJECTS_TEMPLATE/physics-grab.js?v=template-1';
-import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-0.4';
+import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-0.5';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
@@ -293,7 +293,7 @@ enter.addEventListener('click',async()=>{
     camera.position.set(0,0,0); // Never reuse the desktop orbit offset in XR.
     enter.textContent='PASSTHROUGH ACTIVE';
     physics?.releaseAll();
-    setStatus('Bring either controller close (30 cm) to a joint to reveal its edit point. Hold trigger and move arm, elbow, wrist, knee or ankle. Side grips move the whole character.');
+    setStatus('Bring either controller close (30 cm) to a joint to reveal its edit point. Hold trigger and move wrist, ankle, elbow, knee, head, neck, torso or hips; feet remain anchored. Side grips move the whole character.');
   }catch(error){console.error(error);enter.textContent='RETRY PASSTHROUGH';setStatus(`Could not start AR: ${error.name}: ${error.message}`);}
   finally{enter.disabled=false;}
 });
@@ -315,6 +315,10 @@ window.__rigyDiagnostics = () => ({
   animationTime: mixer?.time || 0,
   skeletonBones: avatar ? (() => {let n=0;avatar.traverse(o=>{if(o.isBone)n++;});return n;})() : 0,
   handleCount: posePins?.handles?.size || 0,
+  footErrors: posePins?.footErrors?.()||null,
+  plantedFeet: posePins?.footAnchors?.size||0,
+  footErrors: posePins?.footErrors?.()||null,
+  plantedFeet: posePins?.footAnchors?.size||0,
   visibleHandleCount: posePins?[...posePins.handles.values()].filter(m=>m.visible).length:0,
   activeJoint: posePins?.active?.limb?.id || null,
   pinnedCount: posePins?.pins?.size || 0,
@@ -339,7 +343,7 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
   // preserving its grab's initial world position. The public page has no hook.
   window.__rigyTestControllerDrag=(id,offset) => {
     if(!posePins)throw new Error('Pose solver not ready');
-    const limb=posePins.limbs.find(l=>l.id===id);
+    const limb=[...posePins.limbs,...posePins.bodyHandles].find(l=>l.id===id);
     if(!limb)throw new Error('No handle: '+id);
     if(!Array.isArray(offset)||offset.length!==3||offset.some(x=>!Number.isFinite(x)))throw new Error('Finite XYZ offset required');
     avatar.updateMatrixWorld(true);
