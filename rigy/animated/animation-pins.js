@@ -271,8 +271,26 @@ function solveEffector(limb,target,animatedUpper,lockHinge=false){
   const joint=worldPos(limb.hinge);
   const axis=limb.hingeAxisLocal.clone().applyQuaternion(worldQ(limb.hinge)).normalize();
   const from=tip.clone().sub(joint),to=target.clone().sub(joint);
-  let delta=signedAxisAngle(from,to,axis);
-  if(!lockHinge)turnHinge(limb,clamp(delta*0.65,-0.28,0.28));
+  if(!lockHinge && limb.kindName==='elbow'){
+   // Stable anatomical two-link IK: the triangle formed by humerus,
+   // forearm and wrist goal determines the elbow bend. Direct CCD hinge
+   // steering can accidentally CURL the elbow during overhead animation,
+   // leaving the wrist far below an otherwise feasible shoulder target.
+   const shoulder=worldPos(limb.upper);
+   const a=shoulder.distanceTo(joint),b=joint.distanceTo(tip);
+   const reach=shoulder.distanceTo(target);
+   if(a>EPS&&b>EPS){
+    const desired=Math.acos(clamp((reach*reach-a*a-b*b)/(2*a*b),-1,1));
+    const current=hingeFlexAngle(limb,axis);
+    if(Number.isFinite(current)){
+     const angle=clamp(desired,0,limb.maxBend*RAD);
+     turnHinge(limb,clamp(angle-current,-0.3,0.3));
+    }
+   }
+  }else if(!lockHinge){
+   const delta=signedAxisAngle(from,to,axis);
+   turnHinge(limb,clamp(delta*0.65,-0.28,0.28));
+  }
   steerUpper(limb,target,animatedUpper);
  }
 }
