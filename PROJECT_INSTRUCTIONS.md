@@ -33,3 +33,14 @@ Verify source hash invariants, JS syntax, no regressions to existing controls, w
 5. Only after tests, consider integration into VRPod's shared viewer. `rigy` remains the playground.
 
 Never assert a deployed site, successful model upload, fully medical validation or hardware testing without corresponding evidence.
+
+## Animated rig overlay (v0.2 — 8 November 2026)
+
+- The root `index.html` / `index-app.js` is now the animated Mixamo test page; it loads the user's unchanged `Standing W_Briefcase Idle.fbx`, reconstructed and SHA-256 verified from `models/standing-idle/part-*.txt`. The FBX contains 419 animation samples over 13.933 seconds at 30 fps, not merely 30 frames. Its referenced external Image_0 texture was not embedded.
+- **AnimationMixer.update(dt) must execute before persistent pose constraints every frame.** Never globally pause/rewrite animation as the way to pin a limb.
+- Wrist and ankle cyan grip points use experimental damped 2-bone IK and store their target position in an **animated body reference**: Spine2 for arms, Hips for legs. Orange elbow/knee points store persistent flexion. After trigger release, the pose remains relative to the moving body, while unaffected animation tracks continue updating.
+- Support multiple pins and explicit priority of a pinned knee/elbow hinge over an overlapping ankle/wrist pin. Release must not delete stored pins; "Clear pins" resets them without resetting the animation.
+- The trigger is reserved for individual limb posing. The **unchanged** `VR_OBJECTS_TEMPLATE/physics-grab.js` side grips still operate the entire model: move, rotate, snap, push/pull and scale 10%–350%. No simulated floor or gravity. Never replace that engine.
+- The initial Mixamo bone mapping and inferred hinge axes are **an experiment**, not anatomically validated calibration. Medical elbow/knee flexion values are sourced from `anatomy/medical-joints.v1.json`; precise shoulder/scapula, hip and full 3D coupled movement are not yet implemented. Do not claim perfect anatomy.
+- Static verification and a source commit do not establish actual WebXR/Quest rendering or pose behaviour. Test with real Quest hardware, note missing texture, and report actual performance.
+- The GitHub Pages deployment workflow exists, but Pages must first be enabled through repository Settings → Pages with GitHub Actions source. Do not call `https://kuke2013-hub.github.io/rigy/` live until successfully verified. The repository is currently private; plan limitations may apply.
