@@ -31,6 +31,10 @@ try{
    assert(hip.flexionDeg<=120.02&&hip.flexionDeg>=-15.02,`${id}: bad flexion ${hip.flexionDeg}`);
    assert(moved.goal.every(Number.isFinite)&&moved.after.every(Number.isFinite),`${id}: invalid joint pose`);
    assert(Number.isFinite(hip.footErrorMetres),`${id}: invalid planted foot error`);
+   // Even a controller movement several metres beyond the ROM envelope
+   // must leave the pinned ankle on its ACTUAL skin/bone point.
+   assert(hip.footErrorMetres<.025,
+    `${id} ${label}: impossible target left foot anchor ${hip.footErrorMetres.toFixed(3)}m off mesh`);
   }
  }
  assert.deepEqual(errors,[],`Browser errors: ${errors.join('; ')}`);
