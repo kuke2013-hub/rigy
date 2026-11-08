@@ -4,7 +4,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './rigy/controls/physics-grab.js?v=rigy-1.3.5';
-import { PelvisPoseEngine } from './rigy/animated/pelvis-pose-engine.js?v=rigy-1.4.8';
+import { PelvisPoseEngine } from './rigy/animated/pelvis-pose-engine.js?v=rigy-1.4.9';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
@@ -512,6 +512,11 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
     const rect=renderer.domElement.getBoundingClientRect();
     const p=posePins.handles.get(id).getWorldPosition(new THREE.Vector3()).project(camera);
     return {x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2,z:p.z};
+  };
+  // Test-only: read the actual joint position; not just the controller target.
+  window.__rigyTestHandleWorld=id=>{
+   if(!posePins?.handles.has(id))throw new Error('Unknown handle '+id);
+   return posePins.handles.get(id).getWorldPosition(new THREE.Vector3()).toArray();
   };
   window.__rigyTestReset=()=>posePins?.reset();
 }

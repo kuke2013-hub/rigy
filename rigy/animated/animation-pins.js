@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {projectedMiddleJoint} from './pole-circle.mjs';
 import {HIP_ENVELOPE_V09,projectHipDirection,projectHipFootGoal,thighSoftTissueOverlap} from '../../anatomy/hip-envelope.mjs';
 import {armTorsoIntrusion} from '../../anatomy/torso-collision.mjs';
 import {projectShoulderDirection,SHOULDER_ENVELOPE_V07,SHOULDER_GH_ENVELOPE_V07,shoulderGirdleCarryDegrees} from '../../anatomy/shoulder-envelope.mjs';
@@ -601,6 +602,60 @@ function solveEffector(limb,target,animatedUpper,lockHinge=false){
  }
 }
 
+
+/** V0149: Treat a held elbow/knee as a persistent 3D POLE TARGET.
+ * The original endpoint IK loses the selected sideways bend direction.
+ * Here the controller chooses the intersection-circle azimuth, while the
+ * hand or foot stays anchored and joint restrictions remain authoritative.
+ */
+function solveWithMiddlePole(limb,endpoint,requestedPole,animatedUpper){
+ const root=worldPos(limb.upper),middle=worldPos(limb.hinge);
+ const endNow=worldPos(limb.effector);
+ const a=root.distanceTo(middle),b=middle.distanceTo(endNow);
+ const wanted=projectedMiddleJoint(root,endpoint,a,b,requestedPole,middle);
+ if(!wanted){solveEffector(limb,endpoint,animatedUpper);return;}
+ const joints=[limb.upper,limb.hinge];
+ const snapshot=()=>joints.map(b=>b.quaternion.clone());
+ const restore=pose=>{joints.forEach((b,i)=>b.quaternion.copy(pose[i]));limb.upper.updateMatrixWorld(true);};
+ const endpointError=()=>worldPos(limb.effector).distanceTo(endpoint);
+ const poleError=()=>worldPos(limb.hinge).distanceTo(wanted);
+ const direction=()=>worldPos(limb.hinge).sub(worldPos(limb.upper)).normalize();
+ const constrain=()=>limb.kindName==='knee'?
+   constrainUpperLeg(limb):constrainUpperArm(limb,animatedUpper);
+ let best=snapshot(),bestError=4*endpointError()+poleError();
+ const consider=()=>{
+   if(limb.kindName==='elbow'&&shoulderState(limb).evaluated.clamped)return;
+   if(limb.kindName==='knee'&&hipState(limb).evaluated.clamped)return;
+   const score=4*endpointError()+poleError();
+   if(score<bestError){bestError=score;best=snapshot();}
+ };
+ for(let iteration=0;iteration<8;iteration++){
+   useWorldRotation(limb.upper,Q().setFromUnitVectors(
+     direction(),wanted.clone().sub(worldPos(limb.upper)).normalize()));
+   constrain();
+   // Upper-bone roll aligns the existing 1-DOF hinge with this NEW spatial
+   // bending plane. There is no lateral rotation at the hinge itself.
+   const elbow=worldPos(limb.hinge);
+   let roll=signedAxisAngle(worldPos(limb.effector).sub(elbow),
+     endpoint.clone().sub(elbow),direction());
+   const cap=(limb.kindName==='knee'?35:25)*RAD;
+   roll=clamp(roll,-cap,cap);
+   if(Math.abs(roll)>1e-6){
+     useWorldRotation(limb.upper,Q().setFromAxisAngle(direction(),roll));
+     constrain();
+   }
+   const pivot=worldPos(limb.hinge);
+   const hingeAxis=limb.hingeAxisLocal.clone().applyQuaternion(worldQ(limb.hinge)).normalize();
+   const bend=signedAxisAngle(worldPos(limb.effector).sub(pivot),
+     endpoint.clone().sub(pivot),hingeAxis);
+   turnHinge(limb,clamp(bend,-.5,.5));
+   if(limb.kindName==='elbow')hardArmJointProjection(limb,animatedUpper);
+   consider();
+   if(endpointError()<.008&&poleError()<.015)break;
+ }
+ restore(best);
+}
+
 /** Move the hinge point physically by steering its parent (shoulder / hip).
  * A hinge's own rotation moves its child, not the hinge itself.
  * Only 3D positions are used: bone scales/centimetres never enter these bounds.
@@ -1194,21 +1249,20 @@ export class AnimatedPosePins {
    // Do NOT repeatedly translate the pelvis while dragging a foot: that
    // introduces a competing target and can fully block a moving ankle.
    for(let pass=0;pass<8;pass++){
-    // Direct knee control selects the initial bend plane ONCE. Re-steering the
-    // thigh on every iteration competes with the grounded foot IK and makes
-    // its foot slip. After the first steer the stationary foot has priority.
-    if(pass===0)for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='bend')){
-     const pin=this.pins.get(limb.id);
-     if(!pin?.targetLocal)continue;
-     const goal=this.jointTarget?this.jointTarget(limb,pin):this.anchorRoot.localToWorld(pin.targetLocal.clone());
-     steerHingePosition(limb,goal,animatedUpper.get(limb.upper));
-    }
+    // V0149: bend-direction pole is resolved on EACH anchoring pass.
     for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='effector')){
      const anchor=this.footAnchors.get(limb.id);
      if(!anchor)continue;
      const goal=this.endpointGoal(limb);
-     solveEffector(limb,goal,animatedUpper.get(limb.upper));
-     constrainUpperLeg(limb); // Fail closed even after constrained CCD.
+     const kneeId=limb.id.replace('-ankle','-knee');
+     const kneePin=this.pins.get(kneeId);
+     if(kneePin?.targetLocal){
+       const control=this.limbs.find(l=>l.id===kneeId);
+       const pole=this.jointTarget?this.jointTarget(control,kneePin)
+         :control.reference.localToWorld(kneePin.targetLocal.clone());
+       solveWithMiddlePole(limb,goal,pole,animatedUpper.get(limb.upper));
+     }else solveEffector(limb,goal,animatedUpper.get(limb.upper));
+     constrainUpperLeg(limb); // Hip anatomical limits remain mandatory.
      // Preserve foot world orientation (no planted-foot spinning during idle).
      const desiredWorld=worldQ(this.anchorRoot).multiply(anchor.orientationLocal);
      const parentQ=worldQ(limb.effector.parent).invert();
@@ -1303,7 +1357,16 @@ export class AnimatedPosePins {
      const alreadyHeld=this.armPoseSeeds?.has(limb.side)
        &&this.active?.limb?.side!==limb.side
        &&before.distanceTo(goal)<.018;
-     if(!alreadyHeld)solveAnchoredArm(limb,goal,animatedUpper.get(limb.upper));
+     if(!alreadyHeld){
+      const elbowId=limb.id.replace('-wrist','-elbow');
+      const elbowPin=this.pins.get(elbowId);
+      if(elbowPin?.targetLocal){
+       const control=this.limbs.find(l=>l.id===elbowId);
+       const pole=this.jointTarget?this.jointTarget(control,elbowPin)
+         :control.reference.localToWorld(elbowPin.targetLocal.clone());
+       solveWithMiddlePole(limb,goal,pole,animatedUpper.get(limb.upper));
+      }else solveAnchoredArm(limb,goal,animatedUpper.get(limb.upper));
+     }
      const solved=worldPos(limb.effector);
      this.lastBodyArmSolve??={};
      this.lastBodyArmSolve[limb.id]={
