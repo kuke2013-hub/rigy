@@ -226,6 +226,10 @@ async function loadFeaturedRig(){
       if(/\.glb$/i.test(modelURL.pathname)){
         const parsed=await new Promise((resolve,reject)=>
           glbLoader.parse(binary,new URL('./',modelURL).href,resolve,reject));
+        // The source animation straightens both elbows almost exactly; floating-point
+        // rounding makes the left rest bend -0.00004 degrees. Permit only that
+        // numerical tolerance, not negative anatomical elbow movement.
+        parsed.scene.userData.rigyNearStraightHingeToleranceRad=0.00001;
         installObject(parsed.scene,featuredRig.title||'Character',parsed.animations||[]);
         return;
       }
