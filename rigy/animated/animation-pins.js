@@ -571,8 +571,11 @@ export class AnimatedPosePins {
    // measured contact tolerance rather than blindly stopping after two passes.
    // Do NOT repeatedly translate the pelvis while dragging a foot: that
    // introduces a competing target and can fully block a moving ankle.
-   for(let pass=0;pass<6;pass++){
-    for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='bend')){
+   for(let pass=0;pass<8;pass++){
+    // Direct knee control selects the initial bend plane ONCE. Re-steering the
+    // thigh on every iteration competes with the grounded foot IK and makes
+    // its foot slip. After the first steer the stationary foot has priority.
+    if(pass===0)for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='bend')){
      const pin=this.pins.get(limb.id);
      if(!pin?.targetLocal)continue;
      const goal=this.anchorRoot.localToWorld(pin.targetLocal.clone());
