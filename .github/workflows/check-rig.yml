@@ -49,6 +49,11 @@ jobs:
         run: |
           npm install --no-save playwright@1.65.0
           npx playwright install --with-deps chromium
+      - name: Test hip and soft tissue restrictions on actual rigged FBX
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-hip.log 2>&1 &
+          sleep 3
+          node tests/hip-browser.test.mjs
       - name: Smoke test actual browser loading, animation and persistent pose
         run: |
           python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-http.log 2>&1 &
