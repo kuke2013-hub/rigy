@@ -37,7 +37,11 @@ try{
   assert(before.animationDuration>5);
   const pin=await page.evaluate(()=>window.__rigyTestPin('left-wrist',[0,0.05,0]));
   assert.equal(pin.pinCount,1);
-  await page.waitForTimeout(800);
+  // Headless software WebGL can update well below 30 fps on GitHub runners:
+  // wait for actual mixer progression rather than a fixed wall-clock duration.
+  await page.waitForFunction(previous=>
+    window.__rigyDiagnostics().animationTime>previous+0.22,
+    before.animationTime,{timeout:15000});
   const after=await page.evaluate(()=>window.__rigyDiagnostics());
   console.log('After pin:',JSON.stringify(after));
   assert(after.animationTime>before.animationTime+.2,'Animation must continue advancing');
