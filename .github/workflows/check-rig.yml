@@ -31,7 +31,9 @@ jobs:
           node --test tests/model-loader.test.mjs
           node --test tests/shoulder-envelope.test.mjs
           node --test tests/torso-collision.test.mjs
+          node --test tests/hip-envelope.test.mjs
           node --check anatomy/torso-collision.mjs
+          node --check anatomy/hip-envelope.mjs
           node --check anatomy/shoulder-envelope.mjs
   browser:
     runs-on: ubuntu-latest

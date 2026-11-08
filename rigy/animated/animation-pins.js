@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {HIP_ENVELOPE_V09,projectHipDirection,projectHipFootGoal} from '../../anatomy/hip-envelope.mjs';
 import {armTorsoIntrusion} from '../../anatomy/torso-collision.mjs';
 import {projectShoulderDirection,SHOULDER_ENVELOPE_V07,SHOULDER_GH_ENVELOPE_V07,shoulderGirdleCarryDegrees} from '../../anatomy/shoulder-envelope.mjs';
 
@@ -79,6 +80,11 @@ function makeMixamoMaps(avatar,profiles) {
   limbs.push({id:`${side.toLowerCase()}-ankle`,kind:'effector',label:`${side} ankle · lift foot`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
   limbs.push({id:`${side.toLowerCase()}-knee`,kind:'bend',label:`${side} knee · bend`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
  }
+ const hipContext={hips,spine,leftHip:pickBone(avatar,'LeftUpLeg'),rightHip:pickBone(avatar,'RightUpLeg')};
+ for(const l of limbs.filter(l=>l.kindName==='knee')) {
+  l.side=l.id.startsWith('left-')?'left':'right';
+  l.hipContext=hipContext;
+ }
  const shoulderContext={hips,spine,leftShoulder:pickBone(avatar,'LeftShoulder'),rightShoulder:pickBone(avatar,'RightShoulder')};
  for(const l of limbs.filter(l=>l.kindName==='elbow')){
   l.side=l.id.startsWith('left-')?'left':'right';
@@ -108,6 +114,37 @@ function torsoBasis(context){
  up.crossVectors(forward,left).normalize();
  return {left,up,forward};
 }
+/** Pelvis-local frame from real hip-bone origins; independent of thigh swing. */
+function hipBasis(context){
+ const up=worldPos(context.spine).sub(worldPos(context.hips)).normalize();
+ const left=worldPos(context.leftHip).sub(worldPos(context.rightHip));
+ left.addScaledVector(up,-left.dot(up)).normalize();
+ const forward=left.clone().cross(up).normalize();
+ if(up.lengthSq()<EPS||left.lengthSq()<EPS||forward.lengthSq()<EPS)
+  throw new Error('Cannot establish anatomical pelvis axes');
+ up.crossVectors(forward,left).normalize();
+ return {left,up,forward};
+}
+function hipState(limb){
+ const frame=hipBasis(limb.hipContext);
+ const dir=worldPos(limb.hinge).sub(worldPos(limb.upper)).normalize();
+ const evaluated=projectHipDirection({x:dir.dot(frame.left),y:dir.dot(frame.up),z:dir.dot(frame.forward)},limb.side);
+ return {frame,dir,evaluated};
+}
+function constrainUpperLeg(limb){
+ if(!limb.hipContext)return;
+ const state=hipState(limb),p=state.evaluated;
+ if(!p.clamped)return;
+ const desired=state.frame.left.clone().multiplyScalar(p.x)
+   .addScaledVector(state.frame.up,p.y)
+   .addScaledVector(state.frame.forward,p.z).normalize();
+ if(state.dir.distanceToSquared(desired)<1e-12)return;
+ const delta=Q().setFromUnitVectors(state.dir,desired);
+ const bone=limb.upper;
+ bone.quaternion.copy(worldQ(bone.parent).invert().multiply(delta.multiply(worldQ(bone)))).normalize();
+ bone.updateMatrixWorld(true);
+}
+
 function shoulderState(limb){
  const frame=torsoBasis(limb.shoulderContext);
  const direction=worldPos(limb.hinge).sub(worldPos(limb.upper)).normalize();
@@ -312,7 +349,8 @@ function steerUpper(limb,target,animatedQ){
   bone.quaternion.copy(limited.normalize());
  } else bone.quaternion.copy(localCandidate.normalize());
  bone.updateMatrixWorld(true);
- constrainUpperArm(limb,animatedQ);
+ if(limb.kindName==='knee')constrainUpperLeg(limb);
+ else constrainUpperArm(limb,animatedQ);
 }
 
 
@@ -393,7 +431,8 @@ function steerHingePosition(limb,goal,animatedUpper){
  limb.upper.quaternion.copy(swing>maximum&&swing>EPS
   ?animatedUpper.clone().slerp(local,maximum/swing):local);
  limb.upper.updateMatrixWorld(true);
- constrainUpperArm(limb,animatedUpper);
+ if(limb.kindName==='knee')constrainUpperLeg(limb);
+ else constrainUpperArm(limb,animatedUpper);
 }
 
 function aimHingeChild(limb,tipGoal){
@@ -647,7 +686,16 @@ export class AnimatedPosePins {
   const start=worldPos(limb.upper),joint=worldPos(limb.hinge),tip=worldPos(limb.effector);
   const maxReach=start.distanceTo(joint)+joint.distanceTo(tip);
   const goal=target.clone(),offset=goal.clone().sub(start);
-  if(limb.kindName!=='knee'&&maxReach>EPS&&offset.length()>maxReach){goal.copy(start).add(offset.setLength(maxReach));}
+  if(limb.kindName==='knee'&&maxReach>EPS){
+   // Reject anatomically impossible foot drags BEFORE establishing a fixed anchor.
+   // Angular checks are in the moving pelvis frame and distances in metres.
+   const basis=hipBasis(limb.hipContext);
+   const restricted=projectHipFootGoal({
+    x:offset.dot(basis.left),y:offset.dot(basis.up),z:offset.dot(basis.forward)
+   },limb.side,Math.max(0.01,maxReach-0.006));
+   goal.copy(start).addScaledVector(basis.left,restricted.x)
+    .addScaledVector(basis.up,restricted.y).addScaledVector(basis.forward,restricted.z);
+  }else if(maxReach>EPS&&offset.length()>maxReach){goal.copy(start).add(offset.setLength(maxReach));}
   const targetLocal=limb.reference.worldToLocal(goal);
   this.pins.set(limb.id,{type:'effector',targetLocal});
   if(limb.kindName==='knee'){
@@ -679,6 +727,20 @@ export class AnimatedPosePins {
   const move=target.clone().sub(original);
   if(move.length()>handle.maxMove)move.setLength(handle.maxMove);
   this.pins.set(handle.id,{type:'body',originalLocal:reference.clone(),targetLocal:handle.reference.worldToLocal(original.add(move))});
+ }
+ hipDiagnostics(){
+  this.avatar.updateMatrixWorld(true);
+  const result={};
+  for(const limb of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='knee')){
+   const p=hipState(limb).evaluated;
+   const anchor=this.footAnchors.get(limb.id);
+   result[limb.id]={flexionDeg:p.flexionDeg,abductionDeg:p.abductionDeg,
+    requestedFlexionDeg:p.requestedFlexionDeg,requestedAbductionDeg:p.requestedAbductionDeg,
+    withinEnvelope:!p.clamped,
+    footErrorMetres:anchor?worldPos(limb.effector).distanceTo(
+      this.anchorRoot.localToWorld(anchor.targetLocal.clone())):null};
+  }
+  return result;
  }
  shoulderDiagnostics(){
   this.avatar.updateWorldMatrix(true,true);
@@ -830,6 +892,9 @@ export class AnimatedPosePins {
     this.moveHips(delta);
    }
    this.keepPelvisWithinLegReach();
+   // The medical-reference hip cone is a hard upper limit on BOTH thighs;
+   // it is enforced even when the source animation asks for a larger angle.
+   for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='effector'))constrainUpperLeg(limb);
    // Torso, neck and head offsets apply on top of the idle animation and are
    // bounded per vertebral group by conservative rig-specific angular caps.
    for(const h of this.bodyHandles.filter(h=>h.kind==='body')){
@@ -857,6 +922,7 @@ export class AnimatedPosePins {
      if(!anchor)continue;
      const goal=this.anchorRoot.localToWorld(anchor.targetLocal.clone());
      solveEffector(limb,goal,animatedUpper.get(limb.upper));
+     constrainUpperLeg(limb); // Fail closed even after constrained CCD.
      // Preserve foot world orientation (no planted-foot spinning during idle).
      const desiredWorld=worldQ(this.anchorRoot).multiply(anchor.orientationLocal);
      const parentQ=worldQ(limb.effector.parent).invert();

@@ -130,6 +130,25 @@ try{
       assert(Number.isFinite(error)&&error<.028,`${id} must not unplant ${foot}: ${error}`);
     }
   }
+  // Rigy 1.0: reject splits, hyperextension and cross-body hip motion.
+  // This is a physical constraint, NOT merely a drawn angle indicator.
+  for(const side of ['left','right']){
+   const id=side+'-ankle', outward=side==='left'?1:-1;
+   for(const [label,offset] of [
+    ['extreme-side-split',[2*outward,0,0]],
+    ['hip-behind',[0,0,-1.5]],
+    ['crossed-thighs',[-1.4*outward,0,0]]
+   ]){
+    await page.evaluate(()=>window.__rigyTestReset());
+    await page.waitForTimeout(120);
+    await page.evaluate(({id,offset})=>window.__rigyTestControllerDrag(id,offset),{id,offset});
+    const hip=(await page.evaluate(()=>window.__rigyDiagnostics())).hipDiagnostics?.[id];
+    console.log('Hip restriction',id,label,JSON.stringify(hip));
+    assert(hip&&hip.withinEnvelope,`${id}: must enforce hard hip ROM on ${label}`);
+    assert(hip.abductionDeg <=42.01&&hip.abductionDeg>=-18.01,`${id}: excessive side movement ${hip.abductionDeg}`);
+    assert(hip.flexionDeg<=120.01&&hip.flexionDeg>=-15.01,`${id}: excessive hip pitch ${hip.flexionDeg}`);
+   }
+  }
   // v0.6: even impossible controller demands must not rotate the shoulder
   // behind the body or through other anatomical sectors.
   for(const side of ['left','right']){
