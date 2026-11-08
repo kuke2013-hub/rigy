@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {projectShoulderDirection,SHOULDER_ENVELOPE_V06} from '../../anatomy/shoulder-envelope.mjs';
+import {projectShoulderDirection,SHOULDER_ENVELOPE_V07,SHOULDER_GH_ENVELOPE_V07,shoulderGirdleCarryDegrees} from '../../anatomy/shoulder-envelope.mjs';
 
 /**
  * Rigy 0.5 grounded animated-pose overlay.
@@ -72,15 +72,16 @@ function makeMixamoMaps(avatar,profiles) {
  for(const side of ['Left','Right']) {
   const upperArm=pickBone(avatar,`${side}Arm`), forearm=pickBone(avatar,`${side}ForeArm`),hand=pickBone(avatar,`${side}Hand`);
   const thigh=pickBone(avatar,`${side}UpLeg`),shin=pickBone(avatar,`${side}Leg`),foot=pickBone(avatar,`${side}Foot`);
-  limbs.push({id:`${side.toLowerCase()}-wrist`,kind:'effector',label:`${side} wrist · lift arm`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:SHOULDER_ENVELOPE_V06.addedSwingDeg});
-  limbs.push({id:`${side.toLowerCase()}-elbow`,kind:'bend',label:`${side} elbow · bend`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:SHOULDER_ENVELOPE_V06.addedSwingDeg});
+  limbs.push({id:`${side.toLowerCase()}-wrist`,kind:'effector',label:`${side} wrist · lift arm`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:SHOULDER_ENVELOPE_V07.addedSwingDeg});
+  limbs.push({id:`${side.toLowerCase()}-elbow`,kind:'bend',label:`${side} elbow · bend`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:SHOULDER_ENVELOPE_V07.addedSwingDeg});
   limbs.push({id:`${side.toLowerCase()}-ankle`,kind:'effector',label:`${side} ankle · lift foot`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
   limbs.push({id:`${side.toLowerCase()}-knee`,kind:'bend',label:`${side} knee · bend`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
  }
- const shoulderContext={hips,spine,leftArm:pickBone(avatar,'LeftArm'),rightArm:pickBone(avatar,'RightArm')};
+ const shoulderContext={hips,spine,leftShoulder:pickBone(avatar,'LeftShoulder'),rightShoulder:pickBone(avatar,'RightShoulder')};
  for(const l of limbs.filter(l=>l.kindName==='elbow')){
   l.side=l.id.startsWith('left-')?'left':'right';
   l.shoulderContext=shoulderContext;
+  l.clavicle=l.side==='left'?shoulderContext.leftShoulder:shoulderContext.rightShoulder;
   // Mixamo humeral longitudinal axis measured from child-bone origin, not
   // guessed as arbitrary bone.euler.x or world XYZ.
   l.shoulderAxisLocal=l.hinge.position.clone().normalize();
@@ -95,7 +96,8 @@ function makeMixamoMaps(avatar,profiles) {
  */
 function torsoBasis(context){
  const up=worldPos(context.spine).sub(worldPos(context.hips)).normalize();
- const left=worldPos(context.leftArm).sub(worldPos(context.rightArm));
+ // Bone origins remain thorax-fixed while the proxy shoulder rotates.
+ const left=worldPos(context.leftShoulder).sub(worldPos(context.rightShoulder));
  left.addScaledVector(up,-left.dot(up)).normalize();
  const forward=left.clone().cross(up).normalize();
  if(up.lengthSq()<EPS||left.lengthSq()<EPS||forward.lengthSq()<EPS)
@@ -111,6 +113,29 @@ function shoulderState(limb){
  const evaluated=projectShoulderDirection(local,limb.side);
  return {frame,direction,evaluated};
 }
+
+/** Mixamo Shoulder bone acts as an approximate scapula/clavicle elevator.
+ * Its local rotation never accumulates across animation frames.
+ */
+function liftShoulderGirdle(limb,target){
+ if(!limb.animatedShoulderLocal)return;
+ const frame=torsoBasis(limb.shoulderContext);
+ const from=worldPos(limb.hinge).sub(worldPos(limb.upper)).normalize();
+ const to=target.clone().sub(worldPos(limb.upper)).normalize();
+ if(from.lengthSq()<EPS||to.lengthSq()<EPS)return;
+ const project=d=>projectShoulderDirection({
+  x:d.dot(frame.left),y:d.dot(frame.up),z:d.dot(frame.forward)
+ },limb.side,SHOULDER_ENVELOPE_V07);
+ const desired=project(to),current=project(from);
+ const want=frame.left.clone().multiplyScalar(desired.x).addScaledVector(frame.up,desired.y)
+  .addScaledVector(frame.forward,desired.z).normalize();
+ const carry=shoulderGirdleCarryDegrees(desired.elevationDeg)-shoulderGirdleCarryDegrees(current.elevationDeg);
+ const axis=from.clone().cross(want);
+ if(carry<0.1||axis.lengthSq()<EPS)return;
+ const angle=Math.min(carry*RAD,from.angleTo(want));
+ useWorldRotation(limb.clavicle,new THREE.Quaternion().setFromAxisAngle(axis.normalize(),angle));
+}
+
 /**
  * Two-stage projection for a manually edited Mixamo shoulder:
  * 1. Cap added humeral AXIAL TWIST relative to the animated quaternion.
@@ -130,22 +155,45 @@ function constrainUpperArm(limb,animatedQ){
   let angle=2*Math.atan2(proj,rel.w);
   if(angle>Math.PI)angle-=TWO_PI;
   if(angle< -Math.PI)angle+=TWO_PI;
-  const bounded=clamp(angle,-SHOULDER_ENVELOPE_V06.addedAxialTwistDeg*RAD,
-    SHOULDER_ENVELOPE_V06.addedAxialTwistDeg*RAD);
+  const bounded=clamp(angle,-SHOULDER_ENVELOPE_V07.addedAxialTwistDeg*RAD,
+    SHOULDER_ENVELOPE_V07.addedAxialTwistDeg*RAD);
   const limitedTwist=new THREE.Quaternion().setFromAxisAngle(axis,bounded);
   bone.quaternion.copy(animatedQ).multiply(swing).multiply(limitedTwist).normalize();
   bone.updateWorldMatrix(true,true);
  }
- const state=shoulderState(limb);
- if(!state.evaluated.clamped)return;
- const limited=state.evaluated;
- const safeDirection=state.frame.left.clone().multiplyScalar(limited.x)
-  .addScaledVector(state.frame.up,limited.y).addScaledVector(state.frame.forward,limited.z).normalize();
- const correction=new THREE.Quaternion().setFromUnitVectors(state.direction,safeDirection);
- const desiredWorld=correction.multiply(worldQ(bone));
- bone.parent.updateWorldMatrix(true,false);
- bone.quaternion.copy(worldQ(bone.parent).invert().multiply(desiredWorld)).normalize();
- bone.updateWorldMatrix(true,true);
+ const rotateTo=direction=>{
+  const now=worldPos(limb.hinge).sub(worldPos(bone)).normalize();
+  const out=new THREE.Quaternion().setFromUnitVectors(now,direction).multiply(worldQ(bone));
+  bone.quaternion.copy(worldQ(bone.parent).invert().multiply(out)).normalize();
+  bone.updateWorldMatrix(true,true);
+ };
+ const toWorld=(f,v)=>f.left.clone().multiplyScalar(v.x).addScaledVector(f.up,v.y)
+  .addScaledVector(f.forward,v.z).normalize();
+ let state=shoulderState(limb);
+ if(state.evaluated.clamped){
+  rotateTo(toWorld(state.frame,state.evaluated));
+  state=shoulderState(limb);
+ }
+ // Separately bound GH rotation relative to the calibrated animated girdle.
+ // Total arm elevation can reach overhead only by sharing it with the
+ // shoulder proxy; it cannot demand 170 degrees of GH movement alone.
+ if(limb.animatedShoulderLocal){
+  const base=worldQ(limb.clavicle.parent).multiply(limb.animatedShoulderLocal.clone());
+  const added=worldQ(limb.clavicle).multiply(base.invert());
+  const neutral=state.direction.clone().applyQuaternion(added.clone().invert());
+  const gh=projectShoulderDirection({
+   x:neutral.dot(state.frame.left),y:neutral.dot(state.frame.up),
+   z:neutral.dot(state.frame.forward)
+  },limb.side,SHOULDER_GH_ENVELOPE_V07);
+  if(gh.clamped){
+   const worldDir=toWorld(state.frame,gh).applyQuaternion(added);
+   const total=projectShoulderDirection({
+    x:worldDir.dot(state.frame.left),y:worldDir.dot(state.frame.up),
+    z:worldDir.dot(state.frame.forward)
+   },limb.side,SHOULDER_ENVELOPE_V07);
+   rotateTo(toWorld(state.frame,total));
+  }
+ }
 }
 
 function hingeFlexAngle(limb, axisWorld){
@@ -298,6 +346,8 @@ export class AnimatedPosePins {
   this.pins=new Map();this.handles=new Map();this.active=null;this.enabled=true;this.visible=true;
   this.pointerScreen=null;this.hovered=null;
   this.limbs=makeMixamoMaps(avatar,medicalProfiles);
+  this.shoulderBones=[...new Set(this.limbs.filter(l=>l.kindName==='elbow').map(l=>l.clavicle))];
+  this.previousShoulderFrames=new Map();
   this.bodyHandles=makeBodyHandles(avatar);
   this.anchorRoot=avatar.parent||avatar;
   this.hips=pickBone(avatar,'Hips');
@@ -604,6 +654,17 @@ export class AnimatedPosePins {
    // reanchors to *that* animated frame, not the previously IK-adjusted frame.
    this.avatar.updateMatrixWorld(true);
    if(this.reanchorNextFrame){this.captureFootAnchors();this.reanchorNextFrame=false;}
+   // If a shoulder has no animation track, its procedural rotation must not
+   // accumulate from the prior frame. Keep a genuine newly animated frame.
+   let restored=false;
+   for(const b of this.shoulderBones){
+    const prev=this.previousShoulderFrames.get(b);
+    if(prev&&b.quaternion.angleTo(prev.after)<1e-6){b.quaternion.copy(prev.base);restored=true;}
+   }
+   if(restored)this.avatar.updateMatrixWorld(true);
+   const animatedShoulder=new Map(this.shoulderBones.map(b=>[b,b.quaternion.clone()]));
+   for(const l of this.limbs.filter(l=>l.kindName==='elbow'))
+    l.animatedShoulderLocal=animatedShoulder.get(l.clavicle);
    const animatedUpper=new Map(this.limbs.map(l=>[l.upper,l.upper.quaternion.clone()]));
    const animatedBody=new Map();
    for(const h of this.bodyHandles)for(const bone of h.chain||[])animatedBody.set(bone,bone.quaternion.clone());
@@ -682,6 +743,14 @@ export class AnimatedPosePins {
     const worst=contactErrors.reduce((m,d)=>Math.max(m,d.length()),0);
     if(worst<0.004)break; // 4mm contact accuracy in this rig's model space
    }
+   // Apply overhead shoulder-girdle lift once per shoulder BEFORE wrist/elbow
+   // IK. Whole-body motion and pinned feet still take priority.
+   for(const l of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
+    const wrist=this.pins.get(l.id);
+    const elbow=this.pins.get(l.id.replace('-wrist','-elbow'));
+    const pin=wrist?.targetLocal?wrist:elbow;
+    if(pin?.targetLocal)liftShoulderGirdle(l,this.anchorRoot.localToWorld(pin.targetLocal.clone()));
+   }
    // Upper limbs are lower-priority than the grounded legs and body. Elbows
    // use a constrained hinge; shoulders use bounded swing from animation.
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='bend')){
@@ -695,6 +764,9 @@ export class AnimatedPosePins {
     solveEffector(limb,goal,animatedUpper.get(limb.upper));
    }
    this.avatar.updateMatrixWorld(true);
+   for(const b of this.shoulderBones)this.previousShoulderFrames.set(b,{
+    base:animatedShoulder.get(b).clone(),after:b.quaternion.clone()
+   });
   this.updateVisibility();
  }
 }

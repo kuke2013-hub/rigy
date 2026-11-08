@@ -1,42 +1,46 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {SHOULDER_ENVELOPE_V06 as L,projectShoulderDirection as project,shoulderElevationLimit} from '../anatomy/shoulder-envelope.mjs';
-const radians=d=>d*Math.PI/180;
+import {SHOULDER_ENVELOPE_V07 as S,SHOULDER_GH_ENVELOPE_V07 as G,
+  shoulderGirdleCarryDegrees as carry,projectShoulderDirection as project} from '../anatomy/shoulder-envelope.mjs';
+const rad=d=>d*Math.PI/180;
 const direction=(angle,side,plane)=>{
- const a=radians(angle), k=side==='left'?1:-1;
+ const a=rad(angle),k=side==='left'?1:-1;
  if(plane==='lateral')return{x:k*Math.sin(a),y:-Math.cos(a),z:0};
- if(plane==='anterior')return{x:0,y:-Math.cos(a),z:Math.sin(a)};
- if(plane==='posterior')return{x:0,y:-Math.cos(a),z:-Math.sin(a)};
- if(plane==='medial')return{x:-k*Math.sin(a),y:-Math.cos(a),z:0};
- throw Error('plane');
+ if(plane==='forward')return{x:0,y:-Math.cos(a),z:Math.sin(a)};
+ if(plane==='backward')return{x:0,y:-Math.cos(a),z:-Math.sin(a)};
+ return{x:-k*Math.sin(a),y:-Math.cos(a),z:0};
 };
-test('anatomical directional limits are asymmetric and documented',()=>{
- assert(L.backwardDeg<L.outwardDeg && L.acrossBodyDeg<L.forwardDeg);
- assert.equal(shoulderElevationLimit(1,0),90);
- assert.equal(shoulderElevationLimit(0,-1),35);
- assert.equal(shoulderElevationLimit(0,1),100);
+test('high total elevation is physically possible with a moving shoulder girdle',()=>{
+ assert(S.forwardDeg>=170&&S.outwardDeg>=160);
+ assert(S.outwardDeg>G.outwardDeg&&S.forwardDeg>G.forwardDeg);
+ assert(carry(30)===0&&carry(90)>0&&carry(170)>=45&&carry(180)<=50);
 });
-for(const side of ['left','right'])for(const plane of ['lateral','anterior','posterior','medial']){
- test(`${side} shoulder ${plane} rejects excessive elevation`,()=>{
-  const out=project(direction(135,side,plane),side);
-  const limit={lateral:90,anterior:100,posterior:35,medial:45}[plane];
-  assert.equal(out.clamped,true);
-  assert(Math.abs(out.elevationDeg-limit)<1e-8);
-  assert(Math.abs(Math.hypot(out.x,out.y,out.z)-1)<1e-8);
- });
- test(`${side} shoulder ${plane} preserves ordinary reachable movement`,()=>{
-  const normal=direction(25,side,plane);
-  const out=project(normal,side);
-  assert.equal(out.clamped,false);
-  assert(Math.abs(out.x-normal.x)<1e-8);
- });
+for(const side of ['left','right']){
+ for(const plane of ['forward','lateral']){
+  test(`${side} full shoulder complex permits overhead ${plane} reach`,()=>{
+   const permitted=project(direction(160,side,plane),side,S);
+   assert.equal(permitted.clamped,false);
+   const blockedGH=project(direction(160,side,plane),side,G);
+   assert.equal(blockedGH.clamped,true);
+   assert(blockedGH.elevationDeg<=125.001);
+  });
+ }
+ for(const plane of ['backward','medial']){
+  test(`${side} ${plane} hypermobility is restricted`,()=>{
+   const p=project(direction(125,side,plane),side,S);
+   assert.equal(p.clamped,true);
+   assert(p.elevationDeg <= (plane==='backward'?40:65)+1e-6);
+  });
+ }
 }
-test('diagonal posterior/outward has tighter reach than pure outward',()=>{
- const bound=shoulderElevationLimit(Math.SQRT1_2,-Math.SQRT1_2);
- assert(bound>35&&bound<90);
+test('full shoulder sector stops beyond the selected overhead range',()=>{
+ for(const side of ['left','right']){
+  const p=project(direction(179,side,'lateral'),side,S);
+  assert(p.clamped && Math.abs(p.elevationDeg-170)<1e-6);
+ }
 });
-test('bad inputs fail closed',()=>{
- assert.throws(()=>project({x:0,y:0,z:0},'left'),RangeError);
- assert.throws(()=>project({x:NaN,y:1,z:0},'left'),TypeError);
- assert.throws(()=>project({x:1,y:0,z:0},'unknown'),TypeError);
+test('invalid directions rejected',()=>{
+ assert.throws(()=>project({x:NaN,y:-1,z:0},'left'),TypeError);
+ assert.throws(()=>project({x:0,y:0,z:0},'right'),RangeError);
+ assert.throws(()=>carry(NaN),TypeError);
 });

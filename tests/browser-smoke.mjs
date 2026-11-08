@@ -101,6 +101,20 @@ try{
       assert(shoulder.excessDeg<.6,`${id} ${label}: shoulder violated by ${shoulder.excessDeg.toFixed(1)} degrees`);
     }
   }
+  // v0.7: the previous 100-degree cap prevented overhead reach altogether.
+  // Force BOTH wrists well above the animated pose and verify that total
+  // humerothoracic elevation can exceed shoulder-height under a pinned target.
+  for(const side of ['left','right']){
+    const id=side+'-wrist';
+    await page.evaluate(()=>window.__rigyTestReset());
+    await page.waitForTimeout(120);
+    await page.evaluate(({id})=>window.__rigyTestControllerDrag(id,[0,1.30,0.15]),{id});
+    await page.waitForTimeout(170);
+    const sh=(await page.evaluate(()=>window.__rigyDiagnostics())).shoulderDiagnostics?.[id];
+    console.log('OVERHEAD REACH',id,JSON.stringify(sh));
+    assert(sh&&sh.withinEnvelope, id+' outside total shoulder-complex envelope');
+    assert(sh.elevationDeg>120, id+' failed to lift above shoulder level: '+sh?.elevationDeg);
+  }
   const continuing=await page.evaluate(()=>window.__rigyDiagnostics().animationTime);
   assert(continuing>after.animationTime,'Animation should remain active during edit tests');
   console.log('PASS: animation and all 12 handles, both feet anchored, joint edits remain bounded and markers hide until nearby');
