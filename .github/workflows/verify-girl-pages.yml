@@ -1,0 +1,31 @@
+name: Verify public Rigy Girl Blender Pages bytes
+on:
+  push:
+    branches: [feature/girl-blender-glb-staging]
+    paths:
+      - '.github/workflows/verify-girl-pages.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check homepage link, viewer page and exact public GLB bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://kuke2013-hub.github.io/rigy"
+          curl --fail --silent --show-error --location --retry 12 --retry-delay 5 --retry-all-errors "$base/" -o /tmp/rigy-home.html
+          grep -q 'objects/girl-blender/' /tmp/rigy-home.html
+          curl --fail --silent --show-error --location --retry 12 --retry-delay 5 --retry-all-errors "$base/objects/girl-blender/" -o /tmp/rigy-girl.html
+          grep -q 'gilr_blender_small_textured.glb' /tmp/rigy-girl.html
+          curl --fail --silent --show-error --location --retry 12 --retry-delay 5 --retry-all-errors "$base/models/girl-blender/gilr_blender_small_textured.glb" -o /tmp/girl.glb
+          echo '989700df8b0aceb761eedbbfd30e44b97a822f39658c4b24bddb6e70b93e8c7c  /tmp/girl.glb' | sha256sum -c -
+          python3 - <<'PY'
+          import pathlib,struct
+          b=pathlib.Path('/tmp/girl.glb').read_bytes()
+          assert len(b)==73779892 and b[:4]==b'glTF'
+          assert struct.unpack('<II',b[4:12])==(2,len(b))
+          print('PASSED: Production homepage, character page, and 73,779,892-byte GLB with exact source SHA256.')
+          PY
