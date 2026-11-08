@@ -115,7 +115,7 @@ try{
     await page.waitForTimeout(110);
     // Planted ankle can lift towards the thigh, rather than being forced
     // through an unreachable sideways/outward position at full knee extension.
-    const translation=id.endsWith('-ankle')?[0,0.10,0]:[0.09,0.04,0.07];
+    const translation=id.endsWith('-ankle')?[0,0.10,0]:id==='pelvis'?[0.04,-0.025,0.015]:[0.09,0.04,0.07];
     const moved=await page.evaluate(({id,translation})=>
       window.__rigyTestControllerDrag(id,translation),{id,translation});
     console.log('Controller drag',id,JSON.stringify({moved:moved.moved,deviation:moved.deviation}));

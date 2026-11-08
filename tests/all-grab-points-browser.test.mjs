@@ -15,7 +15,7 @@ try{
  const failures=[];
  for(const id of handles){
   const move=id.endsWith('-ankle')?[0,0.1,0]:
-   id.endsWith('-knee')?[0.05,0.03,0.05]:id==='pelvis'?[0.05,0.04,0]:[0.09,0.04,0.07];
+   id.endsWith('-knee')?[0.05,0.03,0.05]:id==='pelvis'?[0.05,-0.04,0]:[0.09,0.04,0.07];
   const r=await page.evaluate(({id,move})=>window.__rigyTestActualGrip(id,move),{id,move});
   console.log('ACTUAL TRIGGER GRIP',id,JSON.stringify(r));
   if(r.selected!==id)failures.push(id+' trigger selected '+r.selected);

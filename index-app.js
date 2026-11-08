@@ -4,7 +4,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './rigy/controls/physics-grab.js?v=rigy-1.3.5';
-import { PelvisPoseEngine } from './rigy/animated/pelvis-pose-engine.js?v=rigy-1.4.3';
+import { PelvisPoseEngine } from './rigy/animated/pelvis-pose-engine.js?v=rigy-1.4.4';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
@@ -471,10 +471,14 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
      THREE.MathUtils.degToRad(175)));
    if(pinned){
     const lock=posePins.armPoseLocks.get(side);
-    if(!lock)throw new Error('Missing test pose lock');
-    lock.clavicle.copy(limb.clavicle.quaternion);
-    lock.upper.copy(limb.upper.quaternion);
-    lock.hinge.copy(limb.hinge.quaternion);
+    // This pelvis-first solver uses persistent positional anchors, not
+    // the legacy saved arm quaternion lock. Inject illegal user rotation
+    // whether or not there is an old-style pose lock to update.
+    if(lock){
+     lock.clavicle.copy(limb.clavicle.quaternion);
+     lock.upper.copy(limb.upper.quaternion);
+     lock.hinge.copy(limb.hinge.quaternion);
+    }
    }
    avatar.updateMatrixWorld(true);
    const before=posePins.shoulderDiagnostics()[limb.id];
