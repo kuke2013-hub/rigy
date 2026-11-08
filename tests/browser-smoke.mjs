@@ -11,7 +11,7 @@ const errors=[];
 page.on('pageerror',err=>errors.push(err.message));
 page.on('console',message=>{if(message.type()==='error')console.error('BROWSER CONSOLE:',message.text());});
 try{
-  await page.goto('http://127.0.0.1:8765/?rigy_test=1',{waitUntil:'domcontentloaded',timeout:60000});
+  await page.goto(process.env.RIGY_URL || 'http://127.0.0.1:8765/?rigy_test=1',{waitUntil:'domcontentloaded',timeout:60000});
   await page.waitForFunction(()=>window.__rigyDiagnostics?.().ready===true,null,{timeout:120000});
   const before=await page.evaluate(()=>window.__rigyDiagnostics());
   console.log('Loaded rig:',JSON.stringify(before));

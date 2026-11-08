@@ -47,3 +47,7 @@ jobs:
           python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-http.log 2>&1 &
           sleep 3
           node tests/browser-smoke.mjs
+      - name: Smoke test temporary HTTPS CDN preview as a headset fallback
+        continue-on-error: true
+        run: |
+          RIGY_URL='https://raw.githack.com/kuke2013-hub/rigy/main/index.html?rigy_test=1' node tests/browser-smoke.mjs
