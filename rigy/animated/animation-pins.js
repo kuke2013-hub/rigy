@@ -1355,7 +1355,10 @@ export class AnimatedPosePins {
     if(!armSolveSides.has(limb.side))continue;
     const p=this.pins.get(limb.id);if(!p?.targetLocal)continue;
     const goal=this.jointTarget?this.jointTarget(limb,p):limb.reference.localToWorld(p.targetLocal.clone());
-    steerHingePosition(limb,goal,animatedUpper.get(limb.upper));
+    // V0153: anchored wrists are absolute. The new 3D pole IK below must
+    // receive the original arm geometry; the old one-off elbow steer could
+    // throw the wrist 24 cm away before pole solving even began.
+    if(!this.bodyAnchorMode)steerHingePosition(limb,goal,animatedUpper.get(limb.upper));
    }
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
     if(!armSolveSides.has(limb.side))continue;
