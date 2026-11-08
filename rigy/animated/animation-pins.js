@@ -324,6 +324,78 @@ function restrictTorsoPenetration(limb,animatedPose){
  return torsoIntrusion(limb);
 }
 
+
+/**
+ * RIGY-V0137: Continuous final shoulder and upper-limb safety.
+ * Every animated/pinned/restored pose is validated in the current torso frame.
+ * The source animation cannot be considered a safe collision baseline.
+ */
+const ARM_TORSO_LIMIT=0.025;
+function finalArmSafety(limb,animatedUpper){
+ const upper=limb.upper,elbow=limb.hinge;
+ const priorIntrusion=torsoIntrusion(limb);
+ const assign=(a,b)=>{upper.quaternion.copy(a);elbow.quaternion.copy(b);upper.updateMatrixWorld(true);};
+ const record=(method)=>{
+   const intrusion=torsoIntrusion(limb);
+   const valid=!shoulderState(limb).evaluated.clamped&&intrusion<=ARM_TORSO_LIMIT;
+   limb.armSafety={method,priorIntrusion,intrusion,valid};
+   if(valid)limb.lastSafeArm={upper:upper.quaternion.clone(),elbow:elbow.quaternion.clone()};
+ };
+ constrainUpperArm(limb,animatedUpper);
+ const originalUpper=upper.quaternion.clone(),originalElbow=elbow.quaternion.clone();
+ if(!shoulderState(limb).evaluated.clamped&&torsoIntrusion(limb)<=ARM_TORSO_LIMIT){
+   record('accepted');return;
+ }
+ // Avoid repeatedly scanning an invalid Mixamo pose if the prior frame
+ // already established a clear, anatomically feasible configuration.
+ if(limb.lastSafeArm){
+   assign(limb.lastSafeArm.upper,limb.lastSafeArm.elbow);
+   constrainUpperArm(limb,animatedUpper);
+   if(!shoulderState(limb).evaluated.clamped&&torsoIntrusion(limb)<=ARM_TORSO_LIMIT){
+     record('previous-safe');return;
+   }
+ }
+ assign(originalUpper,originalElbow);
+ let best=null,bestScore=Infinity;
+ const consider=()=>{
+   const overlap=torsoIntrusion(limb);
+   const within=!shoulderState(limb).evaluated.clamped;
+   const angle=upper.quaternion.angleTo(originalUpper)+.65*elbow.quaternion.angleTo(originalElbow);
+   const score=(within&&overlap<=ARM_TORSO_LIMIT?0:100)+overlap*40+angle;
+   if(score<bestScore){bestScore=score;best={u:upper.quaternion.clone(),e:elbow.quaternion.clone(),overlap,within};}
+ };
+ consider();
+ const frame=torsoBasis(limb.shoulderContext);
+ const outward=frame.left.clone().multiplyScalar(limb.side==='left'?1:-1);
+ const targets=[
+   outward.clone().multiplyScalar(.7).addScaledVector(frame.up,-.7).addScaledVector(frame.forward,.25),
+   outward.clone().multiplyScalar(.45).addScaledVector(frame.up,-.8).addScaledVector(frame.forward,.45),
+   outward.clone().multiplyScalar(.95).addScaledVector(frame.up,.10).addScaledVector(frame.forward,.3),
+   outward.clone().multiplyScalar(.55).addScaledVector(frame.up,.5).addScaledVector(frame.forward,.65),
+   outward.clone().multiplyScalar(.2).addScaledVector(frame.up,-.45).addScaledVector(frame.forward,.9)
+ ];
+ const from=worldPos(limb.hinge).sub(worldPos(upper)).normalize();
+ for(const dir of targets){
+   assign(originalUpper,originalElbow);
+   useWorldRotation(upper,Q().setFromUnitVectors(from,dir.normalize()));
+   const oriented=upper.quaternion.clone();
+   for(const t of [.25,.5,.75,1]){
+     assign(originalUpper,originalElbow);
+     upper.quaternion.slerp(oriented,t);upper.updateMatrixWorld(true);
+     constrainUpperArm(limb,animatedUpper);
+     const trialUpper=upper.quaternion.clone();
+     for(const bend of [0,-.5,.5,-1.2,1.2]){
+       assign(trialUpper,originalElbow);
+       if(bend)turnHinge(limb,bend);
+       consider();
+     }
+   }
+ }
+ if(best)assign(best.u,best.e);
+ constrainUpperArm(limb,animatedUpper);
+ record(best?.within&&best.overlap<=ARM_TORSO_LIMIT?'projected':'best-available');
+}
+
 function hingeFlexAngle(limb, axisWorld){
  const start=worldPos(limb.upper),joint=worldPos(limb.hinge),end=worldPos(limb.lowerEnd);
  const upper=joint.sub(start).normalize();const lower=end.sub(worldPos(limb.hinge)).normalize();
@@ -541,6 +613,7 @@ export class AnimatedPosePins {
   // A pinned arm must no longer inherit its animation-track rotations: keep
   // clavicle, humerus and elbow local pose relative to the animated chest.
   this.armPoseLocks=new Map();
+  this.armSafetyVersion='RIGY-V0137';
   this.pointerScreen=null;this.hovered=null;
   this.limbs=makeMixamoMaps(avatar,medicalProfiles);
   this.shoulderBones=[...new Set(this.limbs.filter(l=>l.kindName==='elbow').map(l=>l.clavicle))];
@@ -679,7 +752,9 @@ export class AnimatedPosePins {
  }
  setVisible(v){this.visible=!!v;this.updateVisibility();}
  setEnabled(v){this.enabled=!!v;if(!v)this.active=null;}
- reset(){this.pins.clear();this.armPoseLocks.clear();this.active=null;this.bodyAnchorMode=false;this.handAnchors.clear();this.reanchorNextFrame=true;}
+ reset(){this.pins.clear();this.armPoseLocks.clear();this.active=null;this.bodyAnchorMode=false;this.handAnchors.clear();this.reanchorNextFrame=true;
+  for(const l of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='elbow')){l.lastSafeArm=null;l.armSafety=null;}
+ }
  destroy(){for(const release of this.listeners)release();this.listeners=[];
   this.renderer.domElement.removeEventListener('pointerdown',this.pointerDown);
   this.renderer.domElement.removeEventListener('pointermove',this.pointerMove);
@@ -893,6 +968,7 @@ export class AnimatedPosePins {
     goalElevationDeg,
     girdleDeltaDeg:l.animatedShoulderLocal?l.clavicle.quaternion.angleTo(l.animatedShoulderLocal)/RAD:0,
     torsoIntrusion:torsoIntrusion(l),
+    safety:l.armSafety||null,
     elbowFlexDeg:l.hingeAxisLocal?
       hingeFlexAngle(l,l.hingeAxisLocal.clone().applyQuaternion(worldQ(l.hinge)))/RAD:null,
     shoulderWorld:worldPos(l.upper).toArray(),
@@ -987,12 +1063,6 @@ export class AnimatedPosePins {
    for(const l of this.limbs.filter(l=>l.kindName==='elbow'))
     l.animatedShoulderLocal=animatedShoulder.get(l.clavicle);
    const animatedUpper=new Map(this.limbs.map(l=>[l.upper,l.upper.quaternion.clone()]));
-   // Keep a non-procedural collision-safe reference for all animated arms.
-   const baseArmRotations=new Map();
-   for(const arm of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='elbow')){
-    baseArmRotations.set(arm.side,[arm.clavicle.quaternion.clone(),
-      arm.upper.quaternion.clone(),arm.hinge.quaternion.clone()]);
-   }
    const animatedBody=new Map();
    for(const h of this.bodyHandles)for(const bone of h.chain||[])animatedBody.set(bone,bone.quaternion.clone());
    // Character's animated hip bob and root translation are compensated by the
@@ -1146,26 +1216,24 @@ export class AnimatedPosePins {
      };
     }else solveEffector(limb,goal,animatedUpper.get(limb.upper));
    }
-   // Enforce segment-vs-torso exclusion AFTER all wrist/elbow manipulation.
-   // This also checks an existing pinned arm as the torso animates beneath it.
-   for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
-    if(this.bodyAnchorMode||this.pins.has(limb.id)||this.pins.has(limb.id.replace('-wrist','-elbow'))){
-     restrictTorsoPenetration(limb,baseArmRotations.get(limb.side));
-     if(this.bodyAnchorMode&&this.lastBodyArmSolve?.[limb.id]){
-      const sample=this.lastBodyArmSolve[limb.id];
-      sample.afterCollisionMetres=worldPos(limb.effector).toArray();
-      sample.afterCollisionErrorMetres=worldPos(limb.effector).distanceTo(V().fromArray(sample.goalMetres));
-      sample.intrusionAfterCorrection=torsoIntrusion(limb);
-     }
-     const lock=this.armPoseLocks.get(limb.side);
-     if(lock&&!armSolveSides.has(limb.side)){
-      lock.clavicle.copy(limb.clavicle.quaternion);
-      lock.upper.copy(limb.upper.quaternion);
-      lock.hinge.copy(limb.hinge.quaternion);
-     }
+   // Always run the final safety pass AFTER IK and pose-lock restoration.
+    // It protects free-running animation as well as actively pinned arms.
+    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
+      finalArmSafety(limb,animatedUpper.get(limb.upper));
+      if(this.bodyAnchorMode&&this.lastBodyArmSolve?.[limb.id]){
+        const sample=this.lastBodyArmSolve[limb.id];
+        sample.afterCollisionMetres=worldPos(limb.effector).toArray();
+        sample.afterCollisionErrorMetres=worldPos(limb.effector).distanceTo(V().fromArray(sample.goalMetres));
+        sample.intrusionAfterCorrection=torsoIntrusion(limb);
+      }
+      const lock=this.armPoseLocks.get(limb.side);
+      if(lock&&!armSolveSides.has(limb.side)){
+        lock.clavicle.copy(limb.clavicle.quaternion);
+        lock.upper.copy(limb.upper.quaternion);
+        lock.hinge.copy(limb.hinge.quaternion);
+      }
     }
-   }
-   // Capture the solved pose as a local, torso-following constraint; the
+    // Capture the solved pose as a local, torso-following constraint; the
    // next animation frame will restore it instead of fighting with IK.
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
     if(!armSolveSides.has(limb.side)||this.bodyAnchorMode)continue;

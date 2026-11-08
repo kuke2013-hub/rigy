@@ -4,7 +4,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './rigy/controls/physics-grab.js?v=rigy-1.3.5';
-import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-1.3.4';
+import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-1.3.7';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
@@ -268,7 +268,7 @@ function resetView(){
   if(!renderer.xr.isPresenting){camera.position.set(0,1.65,2.65);controls.target.set(0,.75,-1.85);controls.update();}
   posePins?.reset();
   physics?.reset();
-  setStatus('Rigy 1.3.5 reset. Side grips grab the character; both grips resize linearly from 10% to 350%.');
+  setStatus('Rigy 1.3.7 reset. Side grips grab the character; both grips resize linearly from 10% to 350%.');
 }
 $('reset').addEventListener('click',resetView);
 
@@ -417,6 +417,28 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
     posePins.storeTarget(limb,center);
     posePins.update();
     return {goal:center.toArray(),shoulder:posePins.shoulderDiagnostics()[id]};
+  };
+
+  // Test-only: force an unpinned arm into the torso to validate final guard.
+  window.__rigyTestInjectUnsafeArm=side=>{
+    if(!posePins||!mixer||!['left','right'].includes(side))throw new Error('Unknown arm');
+    posePins.reset();mixer.setTime(3.2);posePins.update();
+    const limb=posePins.limbs.find(x=>x.id===side+'-wrist');
+    limb.lastSafeArm=null;
+    const world=b=>b.getWorldPosition(new THREE.Vector3());
+    const ctx=limb.shoulderContext;
+    const chest=world(ctx.leftShoulder).add(world(ctx.rightShoulder))
+      .multiplyScalar(.5).lerp(world(ctx.hips),.45);
+    const origin=world(limb.upper);
+    const change=new THREE.Quaternion().setFromUnitVectors(
+      world(limb.hinge).sub(origin).normalize(),chest.sub(origin).normalize());
+    const current=limb.upper.getWorldQuaternion(new THREE.Quaternion());
+    const parent=limb.upper.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+    limb.upper.quaternion.copy(parent.multiply(change.multiply(current)));
+    avatar.updateMatrixWorld(true);
+    const before=posePins.shoulderDiagnostics()[limb.id];
+    posePins.update();
+    return {before,after:posePins.shoulderDiagnostics()[limb.id]};
   };
   window.__rigyTestReset=()=>posePins?.reset();
 }
