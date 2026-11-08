@@ -595,7 +595,12 @@ export class AnimatedPosePins {
     goalElevationDeg,
     girdleDeltaDeg:l.animatedShoulderLocal?l.clavicle.quaternion.angleTo(l.animatedShoulderLocal)/RAD:0,
     wristGoalErrorMetres:pin?.targetLocal?
-      worldPos(l.effector).distanceTo(this.anchorRoot.localToWorld(pin.targetLocal.clone())):null
+      worldPos(l.effector).distanceTo(this.anchorRoot.localToWorld(pin.targetLocal.clone())):null,
+    wristGoalReachMetres:pin?.targetLocal?worldPos(l.upper).distanceTo(this.anchorRoot.localToWorld(pin.targetLocal.clone())):null,
+    armMaxReachMetres:worldPos(l.upper).distanceTo(worldPos(l.hinge))+worldPos(l.hinge).distanceTo(worldPos(l.effector)),
+    upperArmWorld:worldPos(l.upper).toArray(),
+    wristWorld:worldPos(l.effector).toArray(),
+    elbowFlexDeg:l.hingeAxisLocal?hingeFlexAngle(l,l.hingeAxisLocal.clone().applyQuaternion(worldQ(l.hinge)))/RAD:null
    };
   }
   return result;
