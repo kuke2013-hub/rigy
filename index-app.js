@@ -213,9 +213,40 @@ async function loadFeaturedRig(){
   try{
     if(featuredRig){
       const modelURL=new URL(featuredRig.assetUrl,location.href);
-      const response=await fetch(modelURL,{cache:'no-cache'});
-      if(!response.ok)throw new Error('FBX asset HTTP '+response.status);
-      const binary=await response.arrayBuffer();
+      // Source FBX is preserved byte-for-byte in fixed-size GitHub Pages chunks.
+      // GitHub's Git API stored each binary blob independently; reassemble in original order.
+      // The full-source SHA-256 below is checked before the loader touches the geometry.
+      let binary;
+      if(featuredRig.chunkCount && featuredRig.chunkBaseUrl){
+        const chunkBase=new URL(featuredRig.chunkBaseUrl,location.href);
+        const parts=new Array(featuredRig.chunkCount);
+        let nextChunk=0,received=0,finished=0;
+        const worker=async()=>{
+          while(nextChunk<parts.length){
+            const i=nextChunk++;
+            const chunkURL=new URL('part-'+String(i).padStart(3,'0')+'.bin',chunkBase);
+            const response=await fetch(chunkURL);
+            if(!response.ok)throw new Error('Source FBX chunk '+i+' HTTP '+response.status);
+            const part=new Uint8Array(await response.arrayBuffer());
+            if(!part.byteLength)throw new Error('Source FBX chunk '+i+' is empty');
+            parts[i]=part;
+            received+=part.byteLength;
+            setStatus('Loading original character: '+(++finished)+'/'+parts.length+' pieces ('+(received/1048576).toFixed(1)+' MiB)…');
+          }
+        };
+        await Promise.all(Array.from({length:Math.min(4,parts.length)},()=>worker()));
+        const combined=new Uint8Array(received);
+        let offset=0;
+        for(const part of parts){
+          if(!part)throw new Error('A source FBX chunk was not downloaded');
+          combined.set(part,offset);offset+=part.byteLength;
+        }
+        binary=combined.buffer;
+      }else{
+        const response=await fetch(modelURL,{cache:'no-cache'});
+        if(!response.ok)throw new Error('FBX asset HTTP '+response.status);
+        binary=await response.arrayBuffer();
+      }
       if(binary.byteLength!==featuredRig.bytes)throw new Error('FBX size mismatch');
       const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',binary));
       const actual=[...hash].map(x=>x.toString(16).padStart(2,'0')).join('');

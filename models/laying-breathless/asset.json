@@ -15,6 +15,15 @@
   "polygons": 337401,
   "trianglesAfterFan": 608406,
   "animationDurationSeconds": 0.8333333333333334,
-  "publicationStatus": "binary-and-texture-pending",
-  "notes": "Viewer page supports manual local FBX and JPEG import; source binary was not uploaded through the text-only GitHub connector; Quest hardware untested."
+  "publicationStatus": "original-source-published-in-27-lossless-binary-chunks",
+  "notes": "Both original 28,177,072-byte FBX and 494,343-byte JPEG are GitHub-hosted unchanged. Binary FBX is stored in 27 contiguous parts for GitHub API transport, not as a standalone file. The viewer downloads, reassembles, SHA-256 verifies and parses the original FBX. Real Quest 3 compatibility and joint deformation remain to be hardware tested.",
+  "delivery": {
+    "method": "ordered-binary-chunks",
+    "basePath": "chunks/",
+    "chunkNamePattern": "part-NNN.bin",
+    "chunkCount": 27,
+    "chunkSizeBytes": 1048576,
+    "finalChunkBytes": 914096,
+    "checksum": "original full-file SHA-256 verified by browser before parsing"
+  }
 }
