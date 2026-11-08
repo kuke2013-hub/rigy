@@ -1,7 +1,11 @@
-# Rigy 1.3.6 experimental elbow-pole correction
+# Rigy 1.3.6 shoulder IK trial — reverted
 
-The desktop browser regression for a 160-degree lateral reach previously left the wrist ~13 cm from its target despite the upper arm being inside its torso-relative anatomical sector. It commonly selected a near-extended elbow branch and could not follow the endpoint. The two-bone candidate now orients its elbow pole so signed elbow flexion is non-negative. Only when the original CCD leaves a >6.5 cm wrist error, a secondary two-bone solver is attempted; the original candidate is restored unless the second improves it by >=1 mm.
+The trial in commit cb89eaee51b3f1b51500bb9b26b4b96a2b5e2fdf tested positive elbow-pole selection and a secondary geometric IK branch on large manual wrist target misses. GitHub Actions browser testing still reported ~0.129 m lateral-overhead wrist error on the 160-degree target, unchanged from the prior build. The original arm solver and cache-busted version 1.3.5 have therefore been restored in the subsequent commit; **no trial changes remain in the running controller or pose engine**.
 
-**Not a change to anatomical maxima:** existing 170° lateral / 175° forward total shoulder-complex caps, independent 125° GH proxy, elbow flexion bound, clavicle model, torso collision and hip restrictions remain unchanged. No change to original Zelda v13 controller or to the restored two-grip scale. Character-specific motion remains an engineering proxy, not a medically validated three-dimensional tissue simulation.
+The active known limitations remain:
+- 160-degree lateral overhead target may not be reachable by the current solver despite lying within the current aggregate software shoulder envelope.
+- The actual Mixamo forearm hinge plane and humeral axial twist are not calibrated into a complete position-dependent three-dimensional physiological arm model.
+- The existing wrist, elbow, shoulder-complex, hip, knee and pelvis constraints were retained unchanged. Those are software approximations, not an individualized medical simulation.
+- Physical Quest 3 hardware has not been tested here.
 
-This is a rig-specific correction. CI and real Quest measurements determine whether it improves or regresses behaviour. Revert the animation and versioned imports if browser checks regress.
+The scaling correction is independent and remains present in `rigy/controls/` while the unchanged v13 original stays under `VR_OBJECTS_TEMPLATE/`. Do not mask the failing shoulder assertion or relax the medical guard merely to make the test green.

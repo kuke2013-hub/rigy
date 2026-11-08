@@ -410,14 +410,13 @@ function solveArmIK(limb,target,animatedUpper){
   const across=Math.sqrt(Math.max(0,a*a-along*along));
   const pole=elbow.clone().sub(shoulder);
   pole.addScaledVector(direction,-pole.dot(direction));
-  // Choose the joint's flexion direction instead of its mirrored hyperextension branch.
-  const hingeAxis=limb.hingeAxisLocal.clone().applyQuaternion(worldQ(limb.hinge)).normalize();
-  if(pole.lengthSq()<1e-10) pole.crossVectors(direction,hingeAxis);
+  if(pole.lengthSq()<1e-10){
+   const hingeAxis=limb.hingeAxisLocal.clone().applyQuaternion(worldQ(limb.hinge));
+   pole.crossVectors(hingeAxis,direction);
+  }
   if(pole.lengthSq()<1e-10)pole.crossVectors(direction,V().set(0,0,1));
   if(pole.lengthSq()<1e-10)pole.crossVectors(direction,V().set(1,0,0));
   pole.normalize();
-  // With vectors S->E and E->W, signed flexion has sign -cross(aim,pole) dot hinge axis.
-  if(direction.clone().cross(pole).dot(hingeAxis)>0) pole.negate();
   const elbowGoal=shoulder.clone().addScaledVector(direction,along)
     .addScaledVector(pole,across);
   const upperNow=elbow.clone().sub(shoulder).normalize();
@@ -1145,19 +1144,7 @@ export class AnimatedPosePins {
       solvedMetres:solved.toArray(),solvedErrorMetres:solved.distanceTo(goal),
       intrusionBeforeCorrection:torsoIntrusion(limb)
      };
-    }else{
-      solveEffector(limb,goal,animatedUpper.get(limb.upper));
-      const ccdError=worldPos(limb.effector).distanceTo(goal);
-      if(ccdError>0.065){
-       const chain=[limb.clavicle,limb.upper,limb.hinge];
-       const ccdPose=chain.map(b=>b.quaternion.clone());
-       solveArmIK(limb,goal,animatedUpper.get(limb.upper));
-       if(worldPos(limb.effector).distanceTo(goal)>=ccdError-0.001){
-        for(let j=0;j<chain.length;j++)chain[j].quaternion.copy(ccdPose[j]);
-        limb.clavicle.updateMatrixWorld(true);
-       }
-      }
-    }
+    }else solveEffector(limb,goal,animatedUpper.get(limb.upper));
    }
    // Enforce segment-vs-torso exclusion AFTER all wrist/elbow manipulation.
    // This also checks an existing pinned arm as the torso animates beneath it.
