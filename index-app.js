@@ -94,6 +94,49 @@ const physicsReady=createGrabPhysics({renderer,rig,modelAnchor,onStatus:setStatu
 const glbLoader=new GLTFLoader();
 const objLoader=new OBJLoader();
 const fbxLoader=new FBXLoader();
+
+/** RIGY-V0157: Featured model's glossy charcoal/silver surface.
+ * User image is a render/reference, not a UV-unwrapped texture atlas.
+ * Keep all original textures and materials intact in userData.
+ */
+function applyReferenceFinish(root){
+ let applied=0,untouched=0;
+ const tone=material=>{
+  if(!material?.isMaterial)return material;
+  if(!material.isMeshPhongMaterial&&!material.isMeshStandardMaterial&&
+      !material.isMeshPhysicalMaterial){untouched++;return material;}
+  const copy=material.clone();
+  copy.name=(material.name||'original')+'_charcoalSilver';
+  if(copy.isMeshPhongMaterial){
+   copy.color.set(0x303338);
+   copy.specular.set(0xe2e3e4);
+   copy.shininess=88;
+  }else{
+   copy.color.set(0x45484b);
+   copy.metalness=.26;
+   copy.roughness=.27;
+   if(copy.isMeshPhysicalMaterial){copy.clearcoat=.42;copy.clearcoatRoughness=.20;}
+  }
+  copy.needsUpdate=true;
+  applied++;
+  return copy;
+ };
+ root.traverse(part=>{
+  if(!part.isMesh||!part.material)return;
+  const original=part.material;
+  const revised=Array.isArray(original)?original.map(tone):tone(original);
+  if(revised!==original){
+   part.userData.rigySourceMaterial=original;
+   part.material=revised;
+  }
+ });
+ root.userData.rigyReferenceFinish={
+  name:'Polished charcoal and silver',applied,untouched,
+  reversible:true,sourceTexturesPreserved:true
+ };
+ return root.userData.rigyReferenceFinish;
+}
+
 function installObject(root,label='Object',clips=[]) {
   if(!root || !root.isObject3D)throw new Error('The imported file has no Three.js scene.');
   // Compute from a detached root; do not inherit any previous anchor rotation.
@@ -155,6 +198,7 @@ async function loadFeaturedRig(){
     });
     setStatus('Parsing rig, mesh and all animation tracks…');
     const root=fbxLoader.parse(binary,'./models/standing-idle/');
+    applyReferenceFinish(root);
     installObject(root,'Standing W_Briefcase Idle.fbx',root.animations||[]);
   }catch(error){console.error(error);setStatus(`Automatic model import failed: ${error.message}. Choose the FBX locally as a fallback.`);}
   finally{modelLoading=false;}
@@ -518,6 +562,7 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
    if(!posePins?.handles.has(id))throw new Error('Unknown handle '+id);
    return posePins.handles.get(id).getWorldPosition(new THREE.Vector3()).toArray();
   };
+  window.__rigyReferenceFinish=()=>avatar?.userData.rigyReferenceFinish||null;
   window.__rigyTestReset=()=>posePins?.reset();
 }
 let previous=0;
