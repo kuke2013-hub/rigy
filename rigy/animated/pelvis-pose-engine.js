@@ -20,7 +20,7 @@ const world=b=>b.getWorldPosition(V());
 export class PelvisPoseEngine extends AnimatedPosePins {
  constructor(options){
   super(options);
-  this.engineVersion='RIGY-V0141';
+  this.engineVersion='RIGY-V0142';
   this.animationInfluence=motionWeight(.15);
   this.pelvisAnchored=true;
   this.bodyAnchorMode=true;
@@ -62,6 +62,45 @@ export class PelvisPoseEngine extends AnimatedPosePins {
   }
  }
  setAnimationInfluence(value){this.animationInfluence=motionWeight(Number(value));}
+ /**
+  * Keep the pelvis within the intersection of all four anchored limb-reach
+  * spheres. When a requested translation is unreachable, move part-way
+  * along the requested direction instead of moving an anchored hand/foot.
+  *
+  * Translation moves each limb root with the pelvis without changing bone
+  * lengths. We keep the maximal achievable step with a small reach reserve.
+  */
+ limitPelvisWorldGoal(requested){
+  const start=world(this.hips),shift=requested.clone().sub(start);
+  this.lastPelvisRejectedMetres=0;
+  if(shift.lengthSq()<1e-12)return requested;
+  const constraints=[];
+  for(const limb of this.limbs.filter(l=>l.kind==='effector')){
+   const root=world(limb.upper),joint=world(limb.hinge),tip=world(limb.effector);
+   const end=this.endpointGoal(limb);
+   const max=root.distanceTo(joint)+joint.distanceTo(tip);
+   // If animated joints are already marginally beyond full extension,
+   // a pelvis drag must not make that distance any worse.
+   const permitted=Math.max(max-0.003,root.distanceTo(end));
+   constraints.push({root,end,permitted});
+  }
+  const within=factor=>constraints.every(c=>
+    c.root.clone().addScaledVector(shift,factor).distanceTo(c.end)<=c.permitted+1e-7);
+  if(within(1))return requested;
+  let low=0,high=1;
+  for(let step=0;step<20;step++){
+   const middle=(low+high)*.5;
+   if(within(middle))low=middle;else high=middle;
+  }
+  this.lastPelvisRejectedMetres=shift.length()*(1-low);
+  return start.addScaledVector(shift,low);
+ }
+ // Intercept pelvis drags BEFORE they become saved pose targets. All 12
+ // existing handles still use the original controller/pointer dispatchers.
+ storeBodyTarget(handle,target){
+  super.storeBodyTarget(handle,handle.id==='pelvis'
+    ?this.limitPelvisWorldGoal(target):target);
+ }
  // Never let a clip displace an anchored wrist or foot.
  animatedOffset(){return V();}
  endpointGoal(limb){
@@ -138,6 +177,7 @@ export class PelvisPoseEngine extends AnimatedPosePins {
    (id.endsWith('-ankle')?this.footAnchors:this.handAnchors).set(id,value);
   }
   this.jointMicroMotion.clear();
+  this.lastPelvisRejectedMetres=0;
  }
  pelvisDiagnostics(){
   const actual=world(this.hips);
@@ -149,6 +189,7 @@ export class PelvisPoseEngine extends AnimatedPosePins {
    pelvisWorld:actual.toArray(),pelvisGoalWorld:intended.toArray(),
    pelvisDriftMetres:actual.distanceTo(intended),
    anchoredHands:this.handAnchors.size,anchoredFeet:this.footAnchors.size,
+   rejectedPelvisTravelMetres:this.lastPelvisRejectedMetres||0,
    rootRelativeAnchorIds:[...this.homeEndpoints.keys()]
   };
  }

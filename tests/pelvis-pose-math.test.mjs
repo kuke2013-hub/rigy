@@ -10,7 +10,7 @@ test('default 15%, and hard cap of 20% animation',()=>{
 test('rebase original programmed displacement around a new pose',()=>{
  const pose={x:10,y:4,z:-2};
  const raw={x:1.15,y:0,z:0},initial={x:1,y:0,z:0};
- const residual=relativeMotion(raw,initial,.2);
+ const residual=relativeMotion(raw,initial,.2,.05);
  assert(Math.abs((pose.x+residual.x)-10.03)<1e-9);
 });
 test('clamp micro-motion in metres independently of original amplitude',()=>{

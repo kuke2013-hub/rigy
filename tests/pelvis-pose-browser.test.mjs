@@ -28,7 +28,8 @@ try{
   }
  }
  // A manual pelvis move MUST move the pelvis, NEVER the hands or feet.
- const pelvis=await page.evaluate(()=>window.__rigyTestControllerDrag('pelvis',[.04,.02,.015]));
+ // Downward/sideways motion is feasible with both legs already extended.
+ const pelvis=await page.evaluate(()=>window.__rigyTestControllerDrag('pelvis',[.04,-.025,.015]));
  d=await page.evaluate(()=>window.__rigyDiagnostics());
  console.log('MOVED PELVIS',JSON.stringify({pelvis,pose:d.pelvisPose,anchors:d.endpointAnchors}));
  assert(pelvis.moved>.01,'Pelvis controller could not move');
@@ -46,7 +47,7 @@ try{
  }
  await page.evaluate(()=>window.__rigyTestReset());
  const hand=await page.evaluate(()=>window.__rigyTestControllerDrag('left-wrist',[.02,.02,.01]));
- assert(hand.pinned);
+ assert(hand.pinCount>0);
  const handAnchor=(await page.evaluate(()=>window.__rigyDiagnostics())).endpointAnchors['left-wrist'].baseMetres;
  await page.evaluate(()=>window.__rigyTestControllerDrag('pelvis',[.023,.010,.010]));
  d=await page.evaluate(()=>window.__rigyDiagnostics());
