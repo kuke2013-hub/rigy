@@ -10,7 +10,7 @@ try{
  await page.goto('http://127.0.0.1:8765/?rigy_test=1',{waitUntil:'domcontentloaded',timeout:60000});
  await page.waitForFunction(()=>window.__rigyDiagnostics?.().ready===true,null,{timeout:120000});
  let d=await page.evaluate(()=>window.__rigyDiagnostics());
- assert.equal(d.pelvisPose?.version,'RIGY-V0145');
+ assert.equal(d.pelvisPose?.version,'RIGY-V0146');
  assert.equal(d.pelvisPose?.animationInfluence,.15);
  assert.equal(d.pelvisPose?.anchoredFeet,2);
  assert.equal(d.pelvisPose?.anchoredHands,2);
@@ -59,10 +59,15 @@ try{
   'Placed wrist follows pelvis instead of remaining an anchor');
  // Raised hand should remain anchored when the underlying animation
  // advances. The V0144 elbow-branch reset produced a 20cm displacement.
+ // Let the mixer advance after reset, as in the original overhead smoke.
  await page.evaluate(()=>window.__rigyTestReset());
+ await page.waitForTimeout(180);
  await page.evaluate(()=>window.__rigyTestOverhead('left-wrist',160,'forward'));
+ await page.waitForTimeout(170);
  let raised=(await page.evaluate(()=>window.__rigyDiagnostics())).shoulderDiagnostics['left-wrist'];
- assert(raised.wristGoalErrorMetres<.075,'Failed to establish raised arm');
+ console.log('INITIAL OVERHEAD HAND',JSON.stringify(raised));
+ assert(raised.wristGoalErrorMetres<.075,
+  'Failed to establish raised arm: '+raised.wristGoalErrorMetres);
  raised=(await page.evaluate(()=>window.__rigyTestJumpAnimation(6.4))).shoulderDiagnostics['left-wrist'];
  console.log('OVERHEAD HAND CONTINUITY',JSON.stringify(raised));
  assert(raised.wristGoalErrorMetres<.075,
