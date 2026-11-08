@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {AnimatedPosePins} from './animation-pins.js?v=rigy-1.5.6';
+import {AnimatedPosePins} from './animation-pins.js?v=rigy-girl-epsilon-1';
 import {motionWeight,relativeMotion} from './pelvis-pose-math.mjs';
 
 /**
