@@ -1245,6 +1245,19 @@ export class AnimatedPosePins {
    // spine, hips, neck, legs and whole-object transform keep playing.
    // Recomputing IK from each animated elbow frame caused an overhead arm
    // to fall back to the torso during the Mixamo idle cycle.
+   // A fixed hand needs a consistent elbow-bend branch as the source clip
+   // evolves. Previously the IK restarted from the unrelated animation
+   // every frame and could jump 20cm away from a stored overhead hand.
+   if(this.bodyAnchorMode&&this.armPoseSeeds){
+    for(const limb of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='elbow')){
+     const seed=this.armPoseSeeds.get(limb.side);
+     if(!seed)continue;
+     limb.clavicle.quaternion.copy(seed.clavicle);
+     limb.upper.quaternion.copy(seed.upper);
+     limb.hinge.quaternion.copy(seed.hinge);
+     limb.clavicle.updateMatrixWorld(true);
+    }
+   }
    const armSolveSides=new Set();
    for(const arm of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
     const wrist=this.pins.get(arm.id);

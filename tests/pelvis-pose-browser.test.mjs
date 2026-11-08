@@ -10,7 +10,7 @@ try{
  await page.goto('http://127.0.0.1:8765/?rigy_test=1',{waitUntil:'domcontentloaded',timeout:60000});
  await page.waitForFunction(()=>window.__rigyDiagnostics?.().ready===true,null,{timeout:120000});
  let d=await page.evaluate(()=>window.__rigyDiagnostics());
- assert.equal(d.pelvisPose?.version,'RIGY-V0144');
+ assert.equal(d.pelvisPose?.version,'RIGY-V0145');
  assert.equal(d.pelvisPose?.animationInfluence,.15);
  assert.equal(d.pelvisPose?.anchoredFeet,2);
  assert.equal(d.pelvisPose?.anchoredHands,2);
@@ -42,8 +42,12 @@ try{
  for(const t of [1.6,7.1,12.4]){
   d=await page.evaluate(t=>window.__rigyTestJumpAnimation(t),t);
   assert(distance(d.pelvisPose.pelvisWorld,afterMove)<.005,'Moved pelvis drifted at '+t);
-  for(const id of IDs)assert(distance(d.endpointAnchors[id].baseMetres,anchor0[id].baseMetres)<.00001,
-   'Hand or foot anchor followed animation: '+id);
+  for(const id of IDs){
+   assert(distance(d.endpointAnchors[id].baseMetres,anchor0[id].baseMetres)<.00001,
+    'Hand or foot anchor followed animation: '+id);
+   assert(d.endpointAnchors[id].errorMetres<.035,
+    'Rendered joint drifted from anchor: '+id+' error '+d.endpointAnchors[id].errorMetres);
+  }
  }
  await page.evaluate(()=>window.__rigyTestReset());
  const hand=await page.evaluate(()=>window.__rigyTestControllerDrag('left-wrist',[.02,.02,.01]));
@@ -53,6 +57,16 @@ try{
  d=await page.evaluate(()=>window.__rigyDiagnostics());
  assert(distance(d.endpointAnchors['left-wrist'].baseMetres,handAnchor)<.00001,
   'Placed wrist follows pelvis instead of remaining an anchor');
+ // Raised hand should remain anchored when the underlying animation
+ // advances. The V0144 elbow-branch reset produced a 20cm displacement.
+ await page.evaluate(()=>window.__rigyTestReset());
+ await page.evaluate(()=>window.__rigyTestOverhead('left-wrist',160,'forward'));
+ let raised=(await page.evaluate(()=>window.__rigyDiagnostics())).shoulderDiagnostics['left-wrist'];
+ assert(raised.wristGoalErrorMetres<.075,'Failed to establish raised arm');
+ raised=(await page.evaluate(()=>window.__rigyTestJumpAnimation(6.4))).shoulderDiagnostics['left-wrist'];
+ console.log('OVERHEAD HAND CONTINUITY',JSON.stringify(raised));
+ assert(raised.wristGoalErrorMetres<.075,
+  'Pinned wrist drifted on animated frame: '+raised.wristGoalErrorMetres);
  assert.deepEqual(failures,[]);
- console.log('PASS: pelvis fixed until user moves it; fixed hands/feet; 15% clip retained');
+ console.log('PASS: stationary pelvis, both hands/feet anchored, animation reduced and raised hand retained');
 }finally{await browser.close();}

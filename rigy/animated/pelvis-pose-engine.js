@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {AnimatedPosePins} from './animation-pins.js?v=rigy-1.3.9';
+import {AnimatedPosePins} from './animation-pins.js?v=rigy-1.4.5';
 import {motionWeight,relativeMotion} from './pelvis-pose-math.mjs';
 
 /**
@@ -20,11 +20,12 @@ const world=b=>b.getWorldPosition(V());
 export class PelvisPoseEngine extends AnimatedPosePins {
  constructor(options){
   super(options);
-  this.engineVersion='RIGY-V0144';
+  this.engineVersion='RIGY-V0145';
   this.animationInfluence=motionWeight(.15);
   this.pelvisAnchored=true;
   this.bodyAnchorMode=true;
   this.armPoseLocks.clear();
+  this.armPoseSeeds=new Map();
   this.reanchorNextFrame=false;
   this.anchorRoot.updateWorldMatrix(true,false);
   this.pelvisHomeLocal=this.anchorRoot.worldToLocal(world(this.hips));
@@ -160,10 +161,60 @@ export class PelvisPoseEngine extends AnimatedPosePins {
   this.hips.position.copy(parent.worldToLocal(target));
   this.hips.updateMatrixWorld(true);
  }
+ /**
+  * A persistent wrist is an endpoint constraint, not a new animation pose.
+  * Seed each new IK frame from the last validated elbow/shoulder pose, and
+  * keep that pose if a fresh branch cannot keep the wrist near its anchor.
+  */
+ reconcileArms(){
+  for(const arm of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='elbow')){
+   const b=[arm.clavicle,arm.upper,arm.hinge],target=this.endpointGoal(arm);
+   const existing=this.armPoseSeeds.get(arm.side);
+   const error=()=>world(arm.effector).distanceTo(target);
+   const valid=()=>{
+    const state=this.shoulderDiagnostics()[arm.id];
+    return state.withinEnvelope&&state.absoluteJointLimitsOK&&state.torsoIntrusion<=.035;
+   };
+   let actual=error();
+   const moving=this.active?.limb?.side===arm.side;
+   if(existing&&actual>.05&&!moving){
+    const candidate=b.map(bone=>bone.quaternion.clone());
+    b[0].quaternion.copy(existing.clavicle);
+    b[1].quaternion.copy(existing.upper);
+    b[2].quaternion.copy(existing.hinge);
+    b[0].updateMatrixWorld(true);
+    const recovered=error();
+    if(recovered+.006<actual&&valid()){
+     actual=recovered;
+     arm.armSafety={method:'validated-prior-IK-branch',valid:true,
+      intrusion:this.shoulderDiagnostics()[arm.id].torsoIntrusion};
+    }else{
+     b.forEach((bone,i)=>bone.quaternion.copy(candidate[i]));
+     b[0].updateMatrixWorld(true);
+    }
+   }
+   if(actual<.055&&valid()){
+    this.armPoseSeeds.set(arm.side,{
+     clavicle:arm.clavicle.quaternion.clone(),
+     upper:arm.upper.quaternion.clone(),
+     hinge:arm.hinge.quaternion.clone()
+    });
+   }
+  }
+ }
+ storeTarget(limb,target){
+  if(limb.kindName==='elbow')this.armPoseSeeds?.delete(limb.side);
+  super.storeTarget(limb,target);
+ }
+ storeHingeTarget(limb,target,holdTipLocal){
+  if(limb.kindName==='elbow')this.armPoseSeeds?.delete(limb.side);
+  super.storeHingeTarget(limb,target,holdTipLocal);
+ }
  update(){
   if(!this.enabled)return;
   this.applyAnimatedPose();
   super.update();
+  this.reconcileArms();
  }
  reset(){
   super.reset();
@@ -177,6 +228,7 @@ export class PelvisPoseEngine extends AnimatedPosePins {
    (id.endsWith('-ankle')?this.footAnchors:this.handAnchors).set(id,value);
   }
   this.jointMicroMotion.clear();
+  this.armPoseSeeds?.clear();
   this.lastPelvisRejectedMetres=0;
  }
  pelvisDiagnostics(){
