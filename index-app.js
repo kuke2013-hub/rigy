@@ -221,6 +221,14 @@ async function loadFeaturedRig(){
       const actual=[...hash].map(x=>x.toString(16).padStart(2,'0')).join('');
       if(actual!==featuredRig.sha256)throw new Error('FBX SHA-256 mismatch');
       setStatus('Parsing original Mixamo rig, skin weights and animation…');
+      // Featured GLBs are loaded through the same Rigy joint-pose overlay as FBX.
+      // Keep the original Zelda whole-object controller and imported GLB data untouched.
+      if(/\.glb$/i.test(modelURL.pathname)){
+        const parsed=await new Promise((resolve,reject)=>
+          glbLoader.parse(binary,new URL('./',modelURL).href,resolve,reject));
+        installObject(parsed.scene,featuredRig.title||'Character',parsed.animations||[]);
+        return;
+      }
       const root=fbxLoader.parse(binary,new URL('./',modelURL).href);
       if(featuredRig.textureUrl){
         try{featuredAtlas=await new THREE.TextureLoader().loadAsync(new URL(featuredRig.textureUrl,location.href).href);}
