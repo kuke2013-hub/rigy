@@ -617,7 +617,8 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
     const report={meshes:0,unlitMeshes:0,atlasMeshes:0,uvMeshes:0,
       shadowMeshes:0,nonJpegMaterials:0};
     avatar?.traverse(part=>{
-      if(!part.isMesh)return;
+      // The 12 separate edit-handle meshes are controls, not FBX surfaces.
+      if(!part.isMesh||!Object.prototype.hasOwnProperty.call(part.userData,'rigySourceMaterial'))return;
       report.meshes++;
       if(part.geometry?.getAttribute('uv')?.count)report.uvMeshes++;
       const mats=Array.isArray(part.material)?part.material:[part.material];
