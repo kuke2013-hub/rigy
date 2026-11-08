@@ -1298,7 +1298,12 @@ export class AnimatedPosePins {
     // stationary hand. Its output is still projected through GH/shoulder ROM.
     if(this.bodyAnchorMode){
      const before=worldPos(limb.effector);
-     solveAnchoredArm(limb,goal,animatedUpper.get(limb.upper));
+     // A previously validated local arm pose that already holds its hand
+     // within 18mm must not be re-solved from a different elbow branch.
+     const alreadyHeld=this.armPoseSeeds?.has(limb.side)
+       &&this.active?.limb?.side!==limb.side
+       &&before.distanceTo(goal)<.018;
+     if(!alreadyHeld)solveAnchoredArm(limb,goal,animatedUpper.get(limb.upper));
      const solved=worldPos(limb.effector);
      this.lastBodyArmSolve??={};
      this.lastBodyArmSolve[limb.id]={

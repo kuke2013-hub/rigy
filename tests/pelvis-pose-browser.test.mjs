@@ -10,7 +10,7 @@ try{
  await page.goto('http://127.0.0.1:8765/?rigy_test=1',{waitUntil:'domcontentloaded',timeout:60000});
  await page.waitForFunction(()=>window.__rigyDiagnostics?.().ready===true,null,{timeout:120000});
  let d=await page.evaluate(()=>window.__rigyDiagnostics());
- assert.equal(d.pelvisPose?.version,'RIGY-V0146');
+ assert.equal(d.pelvisPose?.version,'RIGY-V0147');
  assert.equal(d.pelvisPose?.animationInfluence,.15);
  assert.equal(d.pelvisPose?.anchoredFeet,2);
  assert.equal(d.pelvisPose?.anchoredHands,2);
@@ -63,6 +63,8 @@ try{
  await page.evaluate(()=>window.__rigyTestReset());
  await page.waitForTimeout(180);
  await page.evaluate(()=>window.__rigyTestOverhead('left-wrist',160,'forward'));
+ console.log('IMMEDIATE RAISED WRIST',
+  JSON.stringify((await page.evaluate(()=>window.__rigyDiagnostics())).shoulderDiagnostics['left-wrist']));
  await page.waitForTimeout(170);
  let raised=(await page.evaluate(()=>window.__rigyDiagnostics())).shoulderDiagnostics['left-wrist'];
  console.log('INITIAL OVERHEAD HAND',JSON.stringify(raised));
