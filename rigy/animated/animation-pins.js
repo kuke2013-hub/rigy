@@ -533,9 +533,8 @@ export class AnimatedPosePins {
    // Leg contact priority: knee position is a secondary constraint while
    // BOTH feet always have world/model-anchor-space position goals. Solve to a
    // measured contact tolerance rather than blindly stopping after two passes.
-   // Correct remaining common drift by translating the pelvis; this preserves
-   // anatomical bone lengths instead of artificially moving the foot bones.
-   let cumulativePostureCorrection=0;
+   // Do NOT repeatedly translate the pelvis while dragging a foot: that
+   // introduces a competing target and can fully block a moving ankle.
    for(let pass=0;pass<6;pass++){
     for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='bend')){
      const pin=this.pins.get(limb.id);
@@ -561,13 +560,6 @@ export class AnimatedPosePins {
     }
     const worst=contactErrors.reduce((m,d)=>Math.max(m,d.length()),0);
     if(worst<0.004)break; // 4mm contact accuracy in this rig's model space
-    if(pass>=1&&contactErrors.length&&cumulativePostureCorrection<0.18){
-     const mean=contactErrors.reduce((sum,d)=>sum.add(d),V()).divideScalar(contactErrors.length).multiplyScalar(0.32);
-     const available=0.18-cumulativePostureCorrection;
-     if(mean.length()>available)mean.setLength(available);
-     cumulativePostureCorrection+=mean.length();
-     this.moveHips(mean);
-    }
    }
    // Upper limbs are lower-priority than the grounded legs and body. Elbows
    // use a constrained hinge; shoulders use bounded swing from animation.
