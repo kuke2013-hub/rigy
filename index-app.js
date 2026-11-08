@@ -4,7 +4,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './rigy/controls/physics-grab.js?v=rigy-1.3.5';
-import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-1.3.7';
+import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-1.3.8';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
@@ -268,7 +268,7 @@ function resetView(){
   if(!renderer.xr.isPresenting){camera.position.set(0,1.65,2.65);controls.target.set(0,.75,-1.85);controls.update();}
   posePins?.reset();
   physics?.reset();
-  setStatus('Rigy 1.3.7 reset. Side grips grab the character; both grips resize linearly from 10% to 350%.');
+  setStatus('Rigy 1.3.8 reset. Side grips grab the character; both grips resize linearly from 10% to 350%.');
 }
 $('reset').addEventListener('click',resetView);
 
@@ -439,6 +439,41 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
     const before=posePins.shoulderDiagnostics()[limb.id];
     posePins.update();
     return {before,after:posePins.shoulderDiagnostics()[limb.id]};
+  };
+
+  // Test-only: inject impossible bone rotation into a raw animation sample or
+  // into a saved pose lock. Both must be rejected by the same final guard.
+  window.__rigyTestIllegalJoint=(side,part,pinned=false)=>{
+   if(!posePins||!mixer||!['left','right'].includes(side)||
+     !['shoulder-twist','elbow-swing','clavicle'].includes(part))
+    throw new Error('Invalid joint probe');
+   posePins.reset();mixer.setTime(3.2);posePins.update();
+   const limb=posePins.limbs.find(l=>l.id===side+'-wrist');
+   if(pinned){
+    posePins.storeTarget(limb,limb.effector.getWorldPosition(new THREE.Vector3()));
+    posePins.update();
+   }
+   const bone=part==='shoulder-twist'?limb.upper:
+     part==='elbow-swing'?limb.hinge:limb.clavicle;
+   const axis=part==='shoulder-twist'?limb.shoulderAxisLocal.clone():
+     part==='elbow-swing'?new THREE.Vector3(1,0,0)
+        .addScaledVector(limb.hingeAxisLocal,-limb.hingeAxisLocal.x).normalize():
+        new THREE.Vector3(1,0,1).normalize();
+   if(axis.lengthSq()<.01)axis.set(0,1,0).addScaledVector(
+     limb.hingeAxisLocal,-limb.hingeAxisLocal.y).normalize();
+   bone.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(axis,
+     THREE.MathUtils.degToRad(175)));
+   if(pinned){
+    const lock=posePins.armPoseLocks.get(side);
+    if(!lock)throw new Error('Missing test pose lock');
+    lock.clavicle.copy(limb.clavicle.quaternion);
+    lock.upper.copy(limb.upper.quaternion);
+    lock.hinge.copy(limb.hinge.quaternion);
+   }
+   avatar.updateMatrixWorld(true);
+   const before=posePins.shoulderDiagnostics()[limb.id];
+   posePins.update();
+   return {before,after:posePins.shoulderDiagnostics()[limb.id]};
   };
   window.__rigyTestReset=()=>posePins?.reset();
 }

@@ -330,6 +330,67 @@ function restrictTorsoPenetration(limb,animatedPose){
  * Every animated/pinned/restored pose is validated in the current torso frame.
  * The source animation cannot be considered a safe collision baseline.
  */
+
+/**
+ * V0138 absolute shoulder/elbow projection. The calibration is captured ONCE
+ * at the initial rig pose and never redefined by an animation frame or pin.
+ */
+const HARD_SHOULDER_TWIST=75*RAD;
+const HARD_GIRDLE_DEVIATION=55*RAD;
+const wrapJointAngle=v=>Math.atan2(Math.sin(v),Math.cos(v));
+function relativeTwistRadians(relative,axis){
+ return wrapJointAngle(2*Math.atan2(
+   relative.x*axis.x+relative.y*axis.y+relative.z*axis.z,relative.w));
+}
+function shoulderTwistAbsolute(limb){
+ const relative=limb.upperNeutralLocal.clone().invert()
+   .multiply(limb.upper.quaternion).normalize();
+ return relativeTwistRadians(relative,limb.shoulderAxisLocal);
+}
+function elbowDeltaAbsolute(limb){
+ const relative=limb.hingeNeutralLocal.clone().invert()
+   .multiply(limb.hinge.quaternion).normalize();
+ return relativeTwistRadians(relative,limb.hingeAxisLocal);
+}
+function elbowExactHinge(limb){
+ const lower=-limb.initialBend,upper=limb.maxBend*RAD-limb.initialBend;
+ const theta=clamp(elbowDeltaAbsolute(limb),lower,upper);
+ return limb.hingeNeutralLocal.clone().multiply(
+   Q().setFromAxisAngle(limb.hingeAxisLocal,theta)).normalize();
+}
+function absoluteArmValid(limb){
+ if(!limb.upperNeutralLocal||!limb.hingeNeutralLocal)return false;
+ return Math.abs(shoulderTwistAbsolute(limb))<=HARD_SHOULDER_TWIST+1e-5
+   &&limb.clavicle.quaternion.angleTo(limb.clavicleNeutralLocal)<=HARD_GIRDLE_DEVIATION+1e-5
+   &&limb.hinge.quaternion.angleTo(elbowExactHinge(limb))<1e-4;
+}
+function hardArmJointProjection(limb,animatedUpper){
+ const clav=limb.clavicle,clavNeutral=limb.clavicleNeutralLocal;
+ const cangle=clavNeutral.angleTo(clav.quaternion);
+ if(cangle>HARD_GIRDLE_DEVIATION+1e-8){
+   const attempt=clav.quaternion.clone();
+   clav.quaternion.copy(clavNeutral).slerp(attempt,HARD_GIRDLE_DEVIATION/cangle);
+   clav.updateMatrixWorld(true);
+ }
+ // Independent anatomical shoulder direction and glenohumeral limits.
+ constrainUpperArm(limb,animatedUpper);
+ // Correct absolute longitudinal humerus roll, NOT relative to source animation.
+ const bone=limb.upper,ref=limb.upperNeutralLocal,axis=limb.shoulderAxisLocal;
+ const rel=ref.clone().invert().multiply(bone.quaternion).normalize();
+ const twist=relativeTwistRadians(rel,axis);
+ const bounded=clamp(twist,-HARD_SHOULDER_TWIST,HARD_SHOULDER_TWIST);
+ if(Math.abs(bounded-twist)>1e-8){
+   const swing=rel.clone().multiply(Q().setFromAxisAngle(axis,twist).invert());
+   bone.quaternion.copy(ref).multiply(swing)
+     .multiply(Q().setFromAxisAngle(axis,bounded)).normalize();
+   bone.updateMatrixWorld(true);
+ }
+ // Elbow can ONLY flex/extend about its calibrated one-dimensional hinge,
+ // between 0 and 145 degrees. Delete all other rotations, even from FBX.
+ limb.hinge.quaternion.copy(elbowExactHinge(limb));
+ limb.hinge.updateMatrixWorld(true);
+}
+
 const ARM_TORSO_LIMIT=0.025;
 function finalArmSafety(limb,animatedUpper){
  const upper=limb.upper,elbow=limb.hinge;
@@ -337,21 +398,21 @@ function finalArmSafety(limb,animatedUpper){
  const assign=(a,b)=>{upper.quaternion.copy(a);elbow.quaternion.copy(b);upper.updateMatrixWorld(true);};
  const record=(method)=>{
    const intrusion=torsoIntrusion(limb);
-   const valid=!shoulderState(limb).evaluated.clamped&&intrusion<=ARM_TORSO_LIMIT;
+   const valid=absoluteArmValid(limb)&&!shoulderState(limb).evaluated.clamped&&intrusion<=ARM_TORSO_LIMIT;
    limb.armSafety={method,priorIntrusion,intrusion,valid};
    if(valid)limb.lastSafeArm={upper:upper.quaternion.clone(),elbow:elbow.quaternion.clone()};
  };
- constrainUpperArm(limb,animatedUpper);
+ hardArmJointProjection(limb,animatedUpper);
  const originalUpper=upper.quaternion.clone(),originalElbow=elbow.quaternion.clone();
- if(!shoulderState(limb).evaluated.clamped&&torsoIntrusion(limb)<=ARM_TORSO_LIMIT){
+ if(absoluteArmValid(limb)&&!shoulderState(limb).evaluated.clamped&&torsoIntrusion(limb)<=ARM_TORSO_LIMIT){
    record('accepted');return;
  }
  // Avoid repeatedly scanning an invalid Mixamo pose if the prior frame
  // already established a clear, anatomically feasible configuration.
  if(limb.lastSafeArm){
    assign(limb.lastSafeArm.upper,limb.lastSafeArm.elbow);
-   constrainUpperArm(limb,animatedUpper);
-   if(!shoulderState(limb).evaluated.clamped&&torsoIntrusion(limb)<=ARM_TORSO_LIMIT){
+   hardArmJointProjection(limb,animatedUpper);
+   if(absoluteArmValid(limb)&&!shoulderState(limb).evaluated.clamped&&torsoIntrusion(limb)<=ARM_TORSO_LIMIT){
      record('previous-safe');return;
    }
  }
@@ -359,7 +420,7 @@ function finalArmSafety(limb,animatedUpper){
  let best=null,bestScore=Infinity;
  const consider=()=>{
    const overlap=torsoIntrusion(limb);
-   const within=!shoulderState(limb).evaluated.clamped;
+   const within=absoluteArmValid(limb)&&!shoulderState(limb).evaluated.clamped;
    const angle=upper.quaternion.angleTo(originalUpper)+.65*elbow.quaternion.angleTo(originalElbow);
    const score=(within&&overlap<=ARM_TORSO_LIMIT?0:100)+overlap*40+angle;
    if(score<bestScore){bestScore=score;best={u:upper.quaternion.clone(),e:elbow.quaternion.clone(),overlap,within};}
@@ -382,17 +443,18 @@ function finalArmSafety(limb,animatedUpper){
    for(const t of [.25,.5,.75,1]){
      assign(originalUpper,originalElbow);
      upper.quaternion.slerp(oriented,t);upper.updateMatrixWorld(true);
-     constrainUpperArm(limb,animatedUpper);
+     hardArmJointProjection(limb,animatedUpper);
      const trialUpper=upper.quaternion.clone();
      for(const bend of [0,-.5,.5,-1.2,1.2]){
        assign(trialUpper,originalElbow);
        if(bend)turnHinge(limb,bend);
+       limb.hinge.quaternion.copy(elbowExactHinge(limb));limb.hinge.updateMatrixWorld(true);
        consider();
      }
    }
  }
  if(best)assign(best.u,best.e);
- constrainUpperArm(limb,animatedUpper);
+ hardArmJointProjection(limb,animatedUpper);
  record(best?.within&&best.overlap<=ARM_TORSO_LIMIT?'projected':'best-available');
 }
 
@@ -613,7 +675,7 @@ export class AnimatedPosePins {
   // A pinned arm must no longer inherit its animation-track rotations: keep
   // clavicle, humerus and elbow local pose relative to the animated chest.
   this.armPoseLocks=new Map();
-  this.armSafetyVersion='RIGY-V0137';
+  this.armSafetyVersion='RIGY-V0138';
   this.pointerScreen=null;this.hovered=null;
   this.limbs=makeMixamoMaps(avatar,medicalProfiles);
   this.shoulderBones=[...new Set(this.limbs.filter(l=>l.kindName==='elbow').map(l=>l.clavicle))];
@@ -661,6 +723,14 @@ export class AnimatedPosePins {
    }
    limb.marker=marker;marker.visible=false;
    this.handles.set(limb.id,marker);
+  }
+  // First known Mixamo pose is the fixed anatomical baseline for this rig.
+  for(const arm of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
+   arm.upperNeutralLocal=arm.upper.quaternion.clone();
+   arm.hingeNeutralLocal=arm.hinge.quaternion.clone();
+   arm.clavicleNeutralLocal=arm.clavicle.quaternion.clone();
+   if(!Number.isFinite(arm.initialBend)||arm.initialBend<0||arm.initialBend>arm.maxBend*RAD)
+    throw new Error('Uncalibrated '+arm.side+' elbow hinge');
   }
   for(const controller of this.controllers){
    const start=()=>this.onControllerStart(controller),stop=()=>this.release(controller);
@@ -969,6 +1039,11 @@ export class AnimatedPosePins {
     girdleDeltaDeg:l.animatedShoulderLocal?l.clavicle.quaternion.angleTo(l.animatedShoulderLocal)/RAD:0,
     torsoIntrusion:torsoIntrusion(l),
     safety:l.armSafety||null,
+    axialTwistFromNeutralDeg:l.upperNeutralLocal?shoulderTwistAbsolute(l)/RAD:null,
+    elbowFlexFromNeutralDeg:l.hingeNeutralLocal?(l.initialBend+elbowDeltaAbsolute(l))/RAD:null,
+    elbowOffHingeDeg:l.hingeNeutralLocal?l.hinge.quaternion.angleTo(elbowExactHinge(l))/RAD:null,
+    girdleFromNeutralDeg:l.clavicleNeutralLocal?l.clavicle.quaternion.angleTo(l.clavicleNeutralLocal)/RAD:null,
+    absoluteJointLimitsOK:l.hingeNeutralLocal?absoluteArmValid(l):false,
     elbowFlexDeg:l.hingeAxisLocal?
       hingeFlexAngle(l,l.hingeAxisLocal.clone().applyQuaternion(worldQ(l.hinge)))/RAD:null,
     shoulderWorld:worldPos(l.upper).toArray(),

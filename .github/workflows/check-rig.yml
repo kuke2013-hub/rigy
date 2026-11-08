@@ -63,6 +63,11 @@ jobs:
           python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-hip.log 2>&1 &
           sleep 3
           node tests/hip-browser.test.mjs
+      - name: Test absolute bone rotation limits override animation and saved poses
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-hard-joints.log 2>&1 &
+          sleep 3
+          node tests/hard-joint-limits-browser.test.mjs
       - name: Guard both unpinned arms throughout the animation
         run: |
           python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-safety.log 2>&1 &
