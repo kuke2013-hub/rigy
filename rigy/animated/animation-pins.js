@@ -409,27 +409,7 @@ function solveEffector(limb,target,animatedUpper,lockHinge=false){
   const axis=limb.hingeAxisLocal.clone().applyQuaternion(worldQ(limb.hinge)).normalize();
   const from=tip.clone().sub(joint),to=target.clone().sub(joint);
   let delta=signedAxisAngle(from,to,axis);
-  if(!lockHinge){
-   let accepted=clamp(delta*0.65,-0.28,0.28);
-   if(limb.kindName==='elbow'){
-    // Don't let 3D CCD solve a reachable overhead wrist target by snapping
-    // the elbow nearly straight. Without a bending-pole constraint, the
-    // lateral shoulder reaches ~145° and misses the wrist by ~13 cm.
-    // Law of cosines gives the REQUIRED elbow flexion, not an arbitrary
-    // hard-coded limit; the medical maxBend remains the upper boundary.
-    const s=worldPos(limb.upper);
-    const a=s.distanceTo(joint),b=joint.distanceTo(tip),d=s.distanceTo(target);
-    if(a>EPS&&b>EPS&&d<a+b-.025){
-     const required=Math.acos(clamp((d*d-a*a-b*b)/(2*a*b),-1,1));
-     const lowerBound=Math.min(limb.maxBend*RAD,Math.max(0,required*.80));
-     const current=hingeFlexAngle(limb,axis);
-     if(Number.isFinite(current)&&current+accepted<lowerBound){
-      accepted=clamp(lowerBound-current,0,.28);
-     }
-    }
-   }
-   turnHinge(limb,accepted);
-  }
+  if(!lockHinge)turnHinge(limb,clamp(delta*0.65,-0.28,0.28));
   steerUpper(limb,target,animatedUpper);
  }
 }
