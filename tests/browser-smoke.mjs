@@ -8,6 +8,11 @@ const browser = await chromium.launch({headless:true,args:[
 ]});
 const page = await browser.newPage({viewport:{width:1440,height:900}});
 const errors=[];
+// rawgit.hack displays a protective HTML confirmation. Automated checks use
+// its documented HttpOnly cookie; a human visitor taps "Open the page" once.
+if(process.env.RIGY_URL){
+  await page.context().addCookies([{name:'__Http-phish',value:'1',url:new URL(process.env.RIGY_URL).origin,secure:true,httpOnly:true,sameSite:'Lax'}]);
+}
 page.on('pageerror',err=>{errors.push(err.message);console.error('BROWSER PAGE ERROR:',err.message);});
 page.on('requestfailed',r=>console.error('BROWSER REQUEST FAILED:',r.url(),r.failure()?.errorText));
 page.on('console',message=>{if(message.type()==='error')console.error('BROWSER CONSOLE:',message.text());});
