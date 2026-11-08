@@ -21,7 +21,7 @@ try{
   const endpointId=id.replace('elbow','wrist').replace('knee','ankle');
   const origin=before.endpointAnchors[endpointId],end=after.endpointAnchors[endpointId];
   const anchorDrift=distance(origin.baseMetres,end.baseMetres);
-  console.log('LATERAL DRAG',id,sign,JSON.stringify({delta,moved,anchorDrift,endError:end.errorMetres}));
+  console.log('LATERAL DRAG',id,sign,JSON.stringify({delta,moved,anchorDrift,endError:end.errorMetres,armSolveTrace:after.armSolveTrace?.[endpointId],safety:after.shoulderDiagnostics?.[endpointId]?.safety}));
   if(!(delta*sign>.008))failures.push(id+' '+sign+' lateral movement '+delta);
   if(anchorDrift>.002)failures.push(id+' '+sign+' endpoint anchor drift '+anchorDrift);
   if(end.errorMetres>.055)failures.push(id+' '+sign+' endpoint IK miss '+end.errorMetres);
