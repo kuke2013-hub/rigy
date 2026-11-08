@@ -577,10 +577,22 @@ export class AnimatedPosePins {
   this.avatar.updateWorldMatrix(true,true);
   const result={};
   for(const l of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='elbow')){
-   const measured=shoulderState(l).evaluated;
-   result[l.id]={elevationDeg:measured.requestedDeg??measured.elevationDeg,
-    limitDeg:measured.maximumDeg,excessDeg:Math.max(0,(measured.requestedDeg??measured.elevationDeg)-measured.maximumDeg),
-    withinEnvelope:!measured.clamped};
+   const state=shoulderState(l),measured=state.evaluated;
+   const pin=this.pins.get(l.id);
+   let goalElevationDeg=null;
+   if(pin?.targetLocal){
+    const goal=this.anchorRoot.localToWorld(pin.targetLocal.clone()).sub(worldPos(l.upper)).normalize();
+    const frame=state.frame;
+    goalElevationDeg=Math.atan2(Math.hypot(goal.dot(frame.left),goal.dot(frame.forward)),-goal.dot(frame.up))/RAD;
+   }
+   result[l.id]={
+    elevationDeg:measured.requestedDeg??measured.elevationDeg,
+    limitDeg:measured.maximumDeg,
+    excessDeg:Math.max(0,(measured.requestedDeg??measured.elevationDeg)-measured.maximumDeg),
+    withinEnvelope:!measured.clamped,
+    goalElevationDeg,
+    girdleDeltaDeg:l.animatedShoulderLocal?l.clavicle.quaternion.angleTo(l.animatedShoulderLocal)/RAD:0
+   };
   }
   return result;
  }
