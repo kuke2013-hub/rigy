@@ -28,7 +28,7 @@ try{
    id+' global placement anchor moved with pelvis');
   assert(goal.idleOffsetMetres<=(goal.kind==='foot'?.00601:.03001),
    id+' idle movement exceeds configured bounds');
-  assert(goal.errorMetres<(goal.kind==='foot'?.027:.090),
+  assert(goal.errorMetres<(goal.kind==='foot'?.027:.025),
    id+' failed to hold placement while pelvis moved: '+goal.errorMetres);
  }
  const base=after.endpointAnchors;
@@ -40,7 +40,7 @@ try{
    const e=diag.endpointAnchors[id],b=base[id];
    assert(dist(e.baseMetres,b.baseMetres)<.001,'base anchor drifted: '+id+' at '+t);
    assert(e.idleOffsetMetres<=(e.kind==='foot'?.00601:.03001));
-   assert(e.errorMetres<(e.kind==='foot'?.028:.10),
+   assert(e.errorMetres<(e.kind==='foot'?.028:.030),
     id+' failed at '+t+'s: '+e.errorMetres.toFixed(3)+'m');
    if(e.kind==='hand'&&dist(e.goalMetres,b.goalMetres)>.001)subtlemotion=true;
   }

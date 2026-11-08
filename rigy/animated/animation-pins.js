@@ -618,6 +618,7 @@ export class AnimatedPosePins {
  animatedOffset(limb){
   const origin=this.animationBaseline.get(limb.id),now=this.animationRaw.get(limb.id);
   if(!origin||!now)return V();
+  if(limb.kindName==='knee'&&!this.bodyAnchorMode)return V();
   const c=limb.kindName==='knee'?IDLE_OFFSET.foot:IDLE_OFFSET.hand;
   const delta=now.clone().sub(origin).multiplyScalar(c.gain);
   if(delta.length()>c.max)delta.setLength(c.max);
@@ -1110,7 +1111,10 @@ export class AnimatedPosePins {
     const p=this.pins.get(limb.id);
     if(!this.bodyAnchorMode&&!p?.targetLocal)continue;
     const goal=this.bodyAnchorMode?this.endpointGoal(limb):limb.reference.localToWorld(p.targetLocal.clone());
-    solveEffector(limb,goal,animatedUpper.get(limb.upper));
+    // Full two-link wrist IK is required when pelvis/torso moves beneath a
+    // stationary hand. Its output is still projected through GH/shoulder ROM.
+    if(this.bodyAnchorMode)solveArmIK(limb,goal,animatedUpper.get(limb.upper));
+    else solveEffector(limb,goal,animatedUpper.get(limb.upper));
    }
    // Enforce segment-vs-torso exclusion AFTER all wrist/elbow manipulation.
    // This also checks an existing pinned arm as the torso animates beneath it.
