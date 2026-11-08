@@ -56,7 +56,7 @@ const animationSpeedEl=$('animationSpeed');
 const animationInfluenceEl=$('animationInfluence');
 animationInfluenceEl.addEventListener('input',()=>posePins?.setAnimationInfluence(Number(animationInfluenceEl.value)/100));
 const showHandlesEl=$('showHandles');
-const medicalProfilesPromise=fetch('./anatomy/medical-joints.v1.json').then(r=>{if(!r.ok)throw new Error('Medical reference data unavailable');return r.json();}).then(data=>data.profiles);
+const medicalProfilesPromise=fetch(new URL('./anatomy/medical-joints.v1.json',import.meta.url)).then(r=>{if(!r.ok)throw new Error('Medical reference data unavailable');return r.json();}).then(data=>data.profiles);
 async function installAnimation(root, clips){
   posePins?.destroy(); posePins=null;
   mixer?.stopAllAction();mixer=null;clip=null;
