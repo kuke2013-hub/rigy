@@ -57,6 +57,11 @@ jobs:
         run: |
           npm install --no-save playwright@1.65.0
           npx playwright install --with-deps chromium
+      - name: Verify knee medical hinge limits in animation and controller drags
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/knee-anatomy.log 2>&1 &
+          sleep 3
+          node tests/knee-anatomy-browser.test.mjs
       - name: Lateral knee and elbow grab regression (both directions)
         run: |
           python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-lateral.log 2>&1 &

@@ -10,7 +10,7 @@ try{
  await page.goto('http://127.0.0.1:8765/?rigy_test=1',{waitUntil:'domcontentloaded',timeout:60000});
  await page.waitForFunction(()=>window.__rigyDiagnostics?.().ready===true,null,{timeout:120000});
  let d=await page.evaluate(()=>window.__rigyDiagnostics());
- assert.equal(d.pelvisPose?.version,'RIGY-V0155');
+ assert.equal(d.pelvisPose?.version,'RIGY-V0156');
  assert.equal(d.pelvisPose?.animationInfluence,.15);
  assert.equal(d.pelvisPose?.anchoredFeet,2);
  assert.equal(d.pelvisPose?.anchoredHands,2);

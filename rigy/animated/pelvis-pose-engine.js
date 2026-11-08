@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {AnimatedPosePins} from './animation-pins.js?v=rigy-1.5.5';
+import {AnimatedPosePins} from './animation-pins.js?v=rigy-1.5.6';
 import {motionWeight,relativeMotion} from './pelvis-pose-math.mjs';
 
 /**
@@ -20,7 +20,7 @@ const world=b=>b.getWorldPosition(V());
 export class PelvisPoseEngine extends AnimatedPosePins {
  constructor(options){
   super(options);
-  this.engineVersion='RIGY-V0155';
+  this.engineVersion='RIGY-V0156';
   this.animationInfluence=motionWeight(.15);
   this.pelvisAnchored=true;
   this.bodyAnchorMode=true;

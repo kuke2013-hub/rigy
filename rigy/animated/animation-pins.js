@@ -147,6 +147,47 @@ function thighIntrusion(limb){
  const radiusB=clamp(lengthB*0.115,0.028,0.065);
  return thighSoftTissueOverlap(a0,a1,b0,b1,radiusA,radiusB,HIP_ENVELOPE_V09.softTissueClearanceMetres);
 }
+
+/** V0156: Fixed neutral anatomical 1-DOF knee and hip axial cap.
+ * Knee point movement sideways is hip motion, never off-axis knee flexion.
+ */
+const HIP_AXIAL_MAX=HIP_ENVELOPE_V09.axialTwistExtraDeg*RAD;
+function hardKneeLimits(limb){
+ if(!limb.kneeNeutral)return;
+ const bone=limb.upper,neutral=limb.thighNeutral,axis=limb.thighAxis;
+ const relative=neutral.clone().invert().multiply(bone.quaternion).normalize();
+ const angle=relativeTwistRadians(relative,axis);
+ const limited=clamp(angle,-HIP_AXIAL_MAX,HIP_AXIAL_MAX);
+ if(Math.abs(limited-angle)>1e-7){
+  const swing=relative.clone().multiply(Q().setFromAxisAngle(axis,angle).invert());
+  bone.quaternion.copy(neutral).multiply(swing)
+    .multiply(Q().setFromAxisAngle(axis,limited)).normalize();
+  bone.updateMatrixWorld(true);
+ }
+ const hinge=limb.hinge;
+ const relativeBend=limb.kneeNeutral.clone().invert().multiply(hinge.quaternion).normalize();
+ const bend=relativeTwistRadians(relativeBend,limb.hingeAxisLocal);
+ const valid=clamp(bend,-limb.initialBend,limb.maxBend*RAD-limb.initialBend);
+ hinge.quaternion.copy(limb.kneeNeutral).multiply(
+  Q().setFromAxisAngle(limb.hingeAxisLocal,valid)).normalize();
+ hinge.updateMatrixWorld(true);
+}
+function kneeAnatomyReport(limb){
+ if(!limb.kneeNeutral)return {};
+ const rel=limb.kneeNeutral.clone().invert().multiply(limb.hinge.quaternion).normalize();
+ const bend=relativeTwistRadians(rel,limb.hingeAxisLocal);
+ const expected=limb.kneeNeutral.clone().multiply(
+   Q().setFromAxisAngle(limb.hingeAxisLocal,clamp(bend,-limb.initialBend,
+     limb.maxBend*RAD-limb.initialBend)));
+ const femur=limb.thighNeutral.clone().invert().multiply(limb.upper.quaternion).normalize();
+ const axial=relativeTwistRadians(femur,limb.thighAxis)/RAD;
+ const flex=(limb.initialBend+bend)/RAD;
+ const offAxis=limb.hinge.quaternion.angleTo(expected)/RAD;
+ return {kneeFlexionDeg:flex,kneeOffAxisDeg:offAxis,hipAxialTwistDeg:axial,
+  kneeWithinLimits:flex>=-.06&&flex<=limb.maxBend+.06&&offAxis<=.06&&
+    Math.abs(axial)<=HIP_ENVELOPE_V09.axialTwistExtraDeg+.06};
+}
+
 function constrainUpperLeg(limb){
  if(!limb.hipContext)return;
  const bone=limb.upper;
@@ -161,6 +202,7 @@ function constrainUpperLeg(limb){
    bone.updateMatrixWorld(true);
   }
  }
+ hardKneeLimits(limb);
  // Avoid growing a thigh intersection once the rig has a previously valid pose.
  // The last feasible local thigh orientation is relative to the animated pelvis.
  const overlap=thighIntrusion(limb);
@@ -178,6 +220,7 @@ function constrainUpperLeg(limb){
    bone.quaternion.copy(safe).slerp(desired,lo);bone.updateMatrixWorld(true);
   }
  }
+ hardKneeLimits(limb);
  if(thighIntrusion(limb)<=0.006)limb.lastSafeHipQuaternion=bone.quaternion.clone();
 }
 
@@ -642,13 +685,15 @@ function solveWithMiddlePole(limb,endpoint,requestedPole,animatedUpper){
  // a stationary wrist/ankle for an impossible sideways pole position.
  for(const f of [1,.85,.7,.55,.4,.25,.13]){
   restore(initial);
-  const amount=clamp(desiredAngle*f,-75*RAD,75*RAD);
+  const max=(arm?75:35)*RAD;
+  const amount=clamp(desiredAngle*f,-max,max);
   useWorldRotation(limb.upper,Q().setFromAxisAngle(axis,amount));
   if(arm)hardArmJointProjection(limb,animatedUpper);
   else constrainUpperLeg(limb);
   const within=arm?
    absoluteArmValid(limb)&&!shoulderState(limb).evaluated.clamped&&
    torsoIntrusion(limb)<=ARM_TORSO_LIMIT:
+   kneeAnatomyReport(limb).kneeWithinLimits&&
    !hipState(limb).evaluated.clamped&&thighIntrusion(limb)<=.006;
   if(!within||error()>endTolerance)continue;
   const deviation=worldPos(limb.hinge).distanceTo(goal);
@@ -789,6 +834,14 @@ export class AnimatedPosePins {
    arm.clavicleNeutralLocal=arm.clavicle.quaternion.clone();
    if(!Number.isFinite(arm.initialBend)||arm.initialBend<0||arm.initialBend>arm.maxBend*RAD)
     throw new Error('Uncalibrated '+arm.side+' elbow hinge');
+  }
+  for(const leg of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='knee')){
+   leg.kneeNeutral=leg.hinge.quaternion.clone();
+   leg.thighNeutral=leg.upper.quaternion.clone();
+   leg.thighAxis=leg.hinge.position.clone().normalize();
+   if(leg.thighAxis.lengthSq()<EPS||!Number.isFinite(leg.initialBend)||
+     leg.initialBend<0||leg.initialBend>leg.maxBend*RAD)
+    throw new Error('Unable to calibrate knee on '+leg.side);
   }
   for(const controller of this.controllers){
    const start=()=>this.onControllerStart(controller),stop=()=>this.release(controller);
@@ -1076,7 +1129,7 @@ export class AnimatedPosePins {
     withinEnvelope:!p.clamped,
     footErrorMetres:anchor?worldPos(limb.effector).distanceTo(
       this.anchorRoot.localToWorld(anchor.targetLocal.clone())):null,
-    thighOverlapMetres:thighIntrusion(limb)};
+    thighOverlapMetres:thighIntrusion(limb),...kneeAnatomyReport(limb)};
   }
   return result;
  }
@@ -1251,8 +1304,9 @@ export class AnimatedPosePins {
    // measured contact tolerance rather than blindly stopping after two passes.
    // Do NOT repeatedly translate the pelvis while dragging a foot: that
    // introduces a competing target and can fully block a moving ankle.
-   for(let pass=0;pass<8;pass++){
-    // V0149: bend-direction pole is resolved on EACH anchoring pass.
+   const movingKnee=[...this.pins.keys()].some(id=>id.endsWith('-knee'));
+   for(let pass=0;pass<(movingKnee?2:8);pass++){
+    // Bounded 3D bend direction obeys fixed knee axes and hip limits.
     for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='effector')){
      const anchor=this.footAnchors.get(limb.id);
      if(!anchor)continue;
@@ -1280,6 +1334,8 @@ export class AnimatedPosePins {
     const worst=contactErrors.reduce((m,d)=>Math.max(m,d.length()),0);
     if(worst<0.004)break; // 4mm contact accuracy in this rig's model space
    }
+   // Hard knee limits have final authority after all leg IK and animation.
+   for(const l of this.limbs.filter(x=>x.kind==='effector'&&x.kindName==='knee'))constrainUpperLeg(l);
    // During an extreme controller FOOT drag, stop at the physically reached
    // location. Do not plant an unreachable ankle point 25cm away from the
    // actual skinned foot: that creates sliding when the drag is released.

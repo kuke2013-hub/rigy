@@ -4,7 +4,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './rigy/controls/physics-grab.js?v=rigy-1.3.5';
-import { PelvisPoseEngine } from './rigy/animated/pelvis-pose-engine.js?v=rigy-1.5.5';
+import { PelvisPoseEngine } from './rigy/animated/pelvis-pose-engine.js?v=rigy-1.5.6';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
