@@ -40,7 +40,7 @@ jobs:
           node-version: '22'
       - name: Install test browser
         run: |
-          npm install --no-save playwright@1.56.1
+          npm install --no-save playwright@1.65.0
           npx playwright install --with-deps chromium
       - name: Smoke test actual browser loading, animation and persistent pose
         run: |
