@@ -1,3 +1,9 @@
+## Immediate Quest test preview (browser-verified)
+
+**[Open the animated Rigy experiment over HTTPS](https://raw.githack.com/kuke2013-hub/rigy/main/index.html)**. This third-party static GitHub preview displays a one-time **“Open the page”** safety confirmation per repository/24h. After confirming, the animated FBX and eight grab points loaded successfully in a real desktop Chromium browser, with a wrist pin persisting while the clip advanced ([automated test](https://github.com/kuke2013-hub/rigy/actions/workflows/check-rig.yml)). On Quest 3/3S, click **Enter Passthrough**. **WebXR controller manipulation has not been tested on real headset hardware yet.** This is a temporary preview, not the production site.
+
+The official [GitHub Pages deployment](https://github.com/kuke2013-hub/rigy/actions/workflows/pages.yml) is still blocked because Pages is not yet enabled in [repository settings](https://github.com/kuke2013-hub/rigy/settings/pages). Once enabled with source **GitHub Actions**, the intended official URL is `https://kuke2013-hub.github.io/rigy/`.
+
 # Rigy 0.2 — animated character + persistent limb posing
 
 **New interactive entry page:** [`index.html`](./index.html) • [Complete implementation notes](./ANIMATED_RIG_README.md) • [Uploaded FBX source manifest](./models/standing-idle/manifest.json) • [Deployment status](../../actions/workflows/pages.yml)
