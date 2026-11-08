@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#131b22">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <title>VR Objects · Reusable Quest 3 Environment · Template 1.0</title>
+  <style>
+    :root{font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark}
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101a23}
+    body{background:radial-gradient(ellipse at 50% 55%,#475663 0%,#1d2d38 45%,#0b131c 100%)}
+    #scene{position:fixed;inset:0}canvas{display:block;width:100%;height:100%}
+    #panel{position:absolute;z-index:3;top:clamp(12px,3vw,28px);left:clamp(12px,3vw,28px);width:min(350px,calc(100% - 24px));background:#101821e8;border:1px solid #ffffff23;border-radius:17px;padding:19px;box-shadow:0 20px 50px #0006;backdrop-filter:blur(18px)}
+    .eyebrow{color:#81d6c6;font-size:11px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}
+    .versionline{margin:-1px 0 10px;color:#95d6c6;font-size:12px;line-height:1.4}
+    .versionline a{color:#b6e9d8;text-decoration:underline;text-underline-offset:3px}
+    .versionline strong{color:#e6f9f3;font-weight:700}
+    h1{font-size:26px;line-height:1.1;margin:7px 0 7px;letter-spacing:-.025em}
+    .sub{font-size:13px;color:#acbfcc;line-height:1.5;margin-bottom:15px}
+    .primary{width:100%;border:0;border-radius:11px;font-size:15px;font-weight:750;padding:14px 12px;color:#102223;background:#86e8d4;cursor:pointer;touch-action:manipulation}
+    .primary:disabled{opacity:.5;cursor:not-allowed}
+    .controls{display:flex;gap:8px;margin-top:9px}
+    .controls button{flex:1;background:#233442;color:#e7f5f5;border:1px solid #ffffff2b;border-radius:9px;padding:10px 5px;cursor:pointer}
+    #status{margin:12px 0 6px;color:#d3e1e8;font-size:12px;line-height:1.5;min-height:34px;overflow-wrap:anywhere}
+    #filelabel{display:block;font-size:12px;color:#84d8c8;margin-top:8px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}#assetFile{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+    .hint{margin:11px 0 0;border-top:1px solid #ffffff20;padding-top:10px;color:#a3b9c8;font-size:12px;line-height:1.55}
+    .kbd{border:1px solid #ffffff40;border-radius:4px;font-size:10px;padding:1px 4px;color:#e6f7fc}
+    #footer{position:fixed;z-index:2;bottom:15px;left:50%;transform:translateX(-50%);background:#091720bb;border:1px solid #ffffff18;padding:9px 14px;border-radius:11px;color:#c1d0d6;white-space:nowrap;font-size:12px;pointer-events:none}
+    @media(max-width:600px){#panel{padding:14px}h1{font-size:21px}.sub{margin-bottom:9px}#footer{font-size:10px;bottom:8px}}
+  </style>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+</head>
+<body>
+  <div id="scene"></div>
+  <section id="panel">
+    <div class="eyebrow">Quest 3 / Model-independent WebXR template</div>
+    <h1>VR Objects <span style="color:#86e8d4">Template 1.0</span></h1>
+    <div class="versionline"><strong>Source: Zelda VR v13 controls</strong> · No model bundled</div>
+    <div class="sub">Transparent passthrough. No virtual floor, grid or gravity. Import an object to manipulate it.</div>
+    <button id="enterAR" class="primary" type="button" disabled>CHECKING QUEST SUPPORT…</button>
+    <div class="controls"><button id="reset" type="button">Reset view and object</button></div>
+    <div id="status" role="status">Preparing model-independent 3D scene…</div>
+    <label id="filelabel" for="assetFile">Choose GLB, OBJ or FBX from device</label>
+    <input id="assetFile" type="file" accept=".glb,.obj,.fbx,model/gltf-binary">
+    <div class="hint"><strong>Quest controller mapping</strong>
+      <br><strong>Grip:</strong> aim the Quest target ray at the object and squeeze to grab nearby or remotely; the second grip joins the hold.
+      <br><strong>Move:</strong> position either held controller UP/DOWN/LEFT/RIGHT; distant manipulation uses both hand displacement and aiming direction.
+      <br><strong>Twist:</strong> wrist rotation controls object orientation, including right-hand pitch and roll in two-hand mode.
+      <br><strong>Resize:</strong> both grips together, spread/close hands, linear 10%–350%.
+      <br><strong>Left thumbstick X:</strong> move the object left/right even when unheld.
+      <br><strong>Either thumbstick Y:</strong> pull object closer or push farther, held or unheld.
+      <br><strong>Right thumbstick X:</strong> rotate held object 30°; without right grip, turn view 30°.
+      <br><strong>Release:</strong> model freezes where placed; zero gravity or momentum.
+      <br><br><strong>Desktop:</strong> drag to orbit, scroll to zoom, WASD to navigate.
+    </div>
+  </section>
+  <div id="footer">VR OBJECTS BASE · No model · Quest 3 passthrough · Source controls v13</div>
+  <script type="module" src="./app.js?v=template-1"></script>
+</body>
+</html>

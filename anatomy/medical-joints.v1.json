@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "1.0.0",
+  "status": "EXPERIMENTAL_NOT_MEDICALLY_VALIDATED_AS_A_RIG",
+  "dateResearched": "2026-11-08",
+  "coordinateConvention": {
+    "handedness": "right-handed",
+    "neutralBodyAxes": {"positiveX": "character anatomical left", "positiveY": "up", "positiveZ": "character anterior"},
+    "anatomicalAngles": {"flexion": "positive X in calibrated joint frame", "twist": "positive Y in calibrated joint frame", "abduction": "positive Z in calibrated joint frame"},
+    "note": "Joint anatomical frames are rig-specific. Calibration is MANDATORY. These angles cannot be assigned blindly to glTF bone Euler.x/y/z. Clinical values are generally separate test motions, not 3D coupled surfaces."
+  },
+  "sources": {
+    "isbUpper": {"title": "ISB joint coordinate recommendation II: shoulder, elbow, wrist, hand", "url": "https://pubmed.ncbi.nlm.nih.gov/15844264/", "scope": "definitions, not range maxima"},
+    "isbLower": {"title": "ISB joint coordinate recommendation I: ankle, hip, spine", "url": "https://pubmed.ncbi.nlm.nih.gov/11934426/", "scope": "definitions, not range maxima"},
+    "cdc": {"title": "CDC / Soucie normal joint ROM study", "url": "https://archive.cdc.gov/www_cdc_gov/ncbddd/jointrom/index.html", "scope": "population mean by age and sex, not hard maxima"},
+    "hip": {"title": "Physical Examination of the Hip, AAOS-derived table", "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8167346/", "scope": "passive reference mean ± SD, tested in stated positions"},
+    "kneePassive": {"title": "Zarins et al. Rotational motion of the knee (1983)", "url": "https://pubmed.ncbi.nlm.nih.gov/6869656/", "scope": "passive axial rotation in 17 healthy knees at specified flexions"},
+    "wrist": {"title": "Coupling between wrist flexion-extension and radial-ulnar deviation", "url": "https://pubmed.ncbi.nlm.nih.gov/15621323/", "scope": "asymmetric position-dependent wrist motion envelope"},
+    "wristOblique": {"title": "Relative contributions of wrist joints to dart throwers' motion", "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5837914/", "scope": "measured wrist mechanical envelope orientation 26.6 ± 4.4 degrees"},
+    "wristClinical": {"title": "Wrist motion measurement using goniometer", "url": "https://pubmed.ncbi.nlm.nih.gov/24322647/", "scope": "clinical wrist range, measurement protocol matters"},
+    "finger": {"title": "Normal Active ROM of fingers; 390 hands, 2024", "url": "https://pubmed.ncbi.nlm.nih.gov/39345665/", "scope": "sample active flexion means, not universal maxima"},
+    "cervical": {"title": "Normal global motion of the cervical spine; 250 healthy participants", "url": "https://pubmed.ncbi.nlm.nih.gov/10521629/", "scope": "global head-to-T1 ROM, not per vertebra"},
+    "scapula": {"title": "In vivo scapulohumeral rhythm during overhead reaching", "url": "https://pubmed.ncbi.nlm.nih.gov/19395283/", "scope": "complex variable shoulder coupling"},
+    "foot": {"title": "Hindfoot inversion/eversion measurements in 100 normal subjects", "url": "https://pubmed.ncbi.nlm.nih.gov/11415615/", "scope": "combined hindfoot passive range; not isolated subtalar single-axis limit"}
+  },
+  "profiles": {
+    "shoulderComplex": {
+      "kind": "aggregateOnly", "boundsDeg": {"flexion": [-50, 180], "abduction": [0, 180]},
+      "sources": ["cdc", "scapula"], "evidence": "complete arm relative to trunk, NOT glenohumeral independent ROM", "rigging": "DO_NOT_ATTACH_TO_ONE_BONE"
+    },
+    "glenohumeral": {
+      "kind": "swingTwist", "boundsDeg": {"flexion": [-50, 120], "abduction": [-30, 120], "twist": [-90, 90]},
+      "sources": ["scapula", "isbUpper"], "evidence": "PROVISIONAL software envelope, not a validated 3D anatomical boundary", "requiresCalibration": true, "coupledDataStatus": "NOT_VALIDATED"
+    },
+    "scapulothoracic": {"kind": "coupledChain", "boundsDeg": null, "sources": ["scapula"], "evidence": "requires calibrated scapula-clavicle-thorax mechanics", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "clavicle": {"kind": "coupledChain", "boundsDeg": null, "sources": ["scapula"], "evidence": "SC and AC motion not quantified by the current selected research as complete 3D surfaces", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "elbow": {
+      "kind": "hinge", "boundsDeg": {"flexion": [0, 145], "abduction": [0, 0], "twist": [0, 0]},
+      "sources": ["cdc"], "evidence": "145 degrees is approximately CDC age 20-44 male mean 144.6, not a universal maximum"
+    },
+    "forearm": {
+      "kind": "axialTwist", "boundsDeg": {"flexion": [0, 0], "abduction": [0, 0], "twist": [-77, 85]},
+      "sources": ["cdc"], "evidence": "approximately mean pronation 76.9 and supination 85.0 in adult male 20-44 CDC sample; anatomical direction requires local calibration"
+    },
+    "wrist": {
+      "kind": "obliqueEnvelope", "boundsDeg": {"flexion": [-71, 74], "abduction": [-34, 20], "twist": [0, 0]},
+      "coupling": {"type": "ellipseProxy", "orientationDeg": 26.6, "note": "engineering approximation, NOT direct fitted measured boundary"},
+      "sources": ["wrist", "wristOblique", "wristClinical"], "evidence": "separately measured ranges + research on coupled oblique motion; approximation of full envelope"
+    },
+    "hip": {
+      "kind": "swingTwist", "boundsDeg": {"flexion": [-17, 128], "abduction": [-14, 33], "twist": [-42, 44]},
+      "sources": ["hip", "isbLower"], "evidence": "AAOS-derived passive measurements in particular examination positions; cross-axis envelope not established", "coupledDataStatus": "NOT_VALIDATED"
+    },
+    "knee": {
+      "kind": "hingeTwist", "boundsDeg": {"flexion": [0, 138], "abduction": [0, 0], "twist": [-25, 45]},
+      "coupling": {"type": "kneePassiveTwistByFlexion", "measuresDeg": [
+        {"flexion": 0, "internal": 0, "external": 0, "basis": "artificial zero-extension lock, engineering choice"},
+        {"flexion": 5, "internal": 10, "external": 23, "basis": "Zarins et al. measured passive ROM"},
+        {"flexion": 30, "internal": 25, "external": 45, "basis": "Zarins et al. measured passive ROM"},
+        {"flexion": 90, "internal": 25, "external": 45, "basis": "approximate plateau 30-90 deg"}
+      ], "note": "This is a passive examination envelope, NOT a validated safe pose range or active physiological limit"},
+      "sources": ["cdc", "kneePassive"], "evidence": "138 deg near CDC adult male 20-44 knee-flexion mean 137.7; twist from a separate passive test; combined surface provisional"
+    },
+    "talocruralAnkle": {
+      "kind": "hinge", "boundsDeg": {"flexion": [-13, 55], "abduction": [0, 0], "twist": [0, 0]},
+      "sources": ["cdc"], "evidence": "+ flexion means plantarflexion; - means dorsiflexion; 55/13 ~ adult male 20-44 CDC means"
+    },
+    "subtalar": {"kind": "obliqueAxis", "boundsDeg": null, "sources": ["foot", "isbLower"], "evidence": "combined hindfoot measured, no transferable isolated XYZ constraint", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "cervicalGlobal": {
+      "kind": "aggregateOnly", "boundsDeg": {"flexion": [-60, 62], "abduction": [-44, 44], "twist": [-72, 72]},
+      "sources": ["cervical"], "evidence": "approximations splitting mean total sagittal ~122, bending ~88, rotation ~144 into symmetric halves; NOT per-bone", "rigging": "DO_NOT_ATTACH_TO_EACH_NECK_BONE"
+    },
+    "cervicalSegment": {"kind": "coupledChain", "boundsDeg": null, "sources": ["cervical", "isbLower"], "evidence": "must be apportioned by segment; full-neck means cannot be repeated per vertebra", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "thoracic": {"kind": "coupledChain", "boundsDeg": null, "sources": ["isbLower"], "evidence": "segment-specific constraints require measured vertebral data", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "lumbar": {"kind": "coupledChain", "boundsDeg": null, "sources": ["isbLower"], "evidence": "segment-specific constraints require measured vertebral data", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "sacroiliac": {"kind": "coupledChain", "boundsDeg": null, "sources": ["isbLower"], "evidence": "very small, complex joint motion; calibration required", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "fingerMCP": {
+      "kind": "hingeSwing", "boundsDeg": {"flexion": [-25, 86], "abduction": [-15, 15], "twist": [0, 0]},
+      "coupling": {"type": "mcpSpreadReduction", "note": "15 degrees max spread and linear reduction are engineering choices; exact angle not established by cited finger study"},
+      "sources": ["finger"], "evidence": "flexion and extension from active measurements; lateral bound and coupling formula PROVISIONAL"
+    },
+    "fingerPIP": {"kind": "hinge", "boundsDeg": {"flexion": [-14, 97], "abduction": [0, 0], "twist": [0, 0]}, "sources": ["finger"], "evidence": "sample measured finger ROM rounded; digit differences exist"},
+    "fingerDIP": {"kind": "hinge", "boundsDeg": {"flexion": [-7, 83], "abduction": [0, 0], "twist": [0, 0]}, "sources": ["finger"], "evidence": "sample measured finger ROM rounded; digit differences exist"},
+    "thumbCMC": {"kind": "coupledChain", "boundsDeg": null, "sources": ["isbUpper"], "evidence": "opposition and coupled axial rotation not calibrated", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "thumbMCP": {"kind": "hinge", "boundsDeg": null, "sources": ["isbUpper"], "evidence": "requires measured thumb-specific reference", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "thumbIP": {"kind": "hinge", "boundsDeg": null, "sources": ["isbUpper"], "evidence": "requires measured thumb-specific reference", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "bigToeMTP": {"kind": "hinge", "boundsDeg": null, "sources": ["isbLower"], "evidence": "not yet grounded to validated isolated joint range in this dataset", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "lesserToe": {"kind": "hinge", "boundsDeg": null, "sources": ["isbLower"], "evidence": "not yet grounded to validated toe-specific measured range", "rigging": "DISABLED_UNTIL_CALIBRATED"},
+    "temporomandibular": {"kind": "rotationTranslation", "boundsDeg": null, "sources": ["isbUpper"], "evidence": "requires jaw translation plus rotation; no validated angular envelope in this dataset", "rigging": "DISABLED_UNTIL_CALIBRATED"}
+  }
+}

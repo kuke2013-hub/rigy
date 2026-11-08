@@ -1,0 +1,42 @@
+{
+  "origin": "https://github.com/kuke2013-hub/vrzzz",
+  "retrieved_date": "2026-11-07",
+  "baseline": "Zelda VR Version 13.0, portable Template 1.0",
+  "files": {
+    "VR_OBJECTS_TEMPLATE/index.html": {
+      "github_blob_sha1": "b73b322113fb87920926d5ac2fbd4678e10c5606",
+      "bytes": 5267,
+      "sha256": "b10df0bfff71f4534ec8bf3f16c7131776325c522c7bb7a055e52ae4ba9d3f75"
+    },
+    "VR_OBJECTS_TEMPLATE/app.js": {
+      "github_blob_sha1": "4a25579814f40ef7337722fa81050f608392cad0",
+      "bytes": 13106,
+      "sha256": "8329c78cb530e2a658adf95985fe4e01327bf6ce22ca4c6183e2d857644fa88c"
+    },
+    "VR_OBJECTS_TEMPLATE/physics-grab.js": {
+      "github_blob_sha1": "9f206b64bbe1a483f429489e54aa85cdc2f489a7",
+      "bytes": 26836,
+      "sha256": "fd9d96229ead1edcad08b15db6266b8662791557a2870a3b5c1c73e20406762e"
+    },
+    "VR_OBJECTS_TEMPLATE/config.js": {
+      "github_blob_sha1": "e8d29b81abb6f697e5703d7c79e6ecf7b8de21a4",
+      "bytes": 649,
+      "sha256": "8a56a6ccffab61880acaf90e9c771db28e695e2dbd04246ef8eaab0c1c13c881"
+    },
+    "VR_OBJECTS_TEMPLATE/README.md": {
+      "github_blob_sha1": "148581d3ba56209e6d57d0b480f25cf99ec014b3",
+      "bytes": 5221,
+      "sha256": "f9d1cf6b619a17c345b7162402e84859a1e698a2842b62d0b331f7ad56041002"
+    },
+    "VR_OBJECTS_TEMPLATE/PROJECT_INSTRUCTIONS.md": {
+      "github_blob_sha1": "08417879adbb1a2c812c1c57a40f9c4fb426d243",
+      "bytes": 7049,
+      "sha256": "b58752d4b84df14c450967d36cc7d9d49d3f94d73b0a1c49debeebadfded807f"
+    },
+    "objects/shared/app.js": {
+      "github_blob_sha1": "d07ca089f9d4114a0df03ee4842979b08a6d4689",
+      "bytes": 20093,
+      "sha256": "d3abd83067931c23cd41650711a03f244bbe8177dab733c3d90eb26ada375926"
+    }
+  }
+}

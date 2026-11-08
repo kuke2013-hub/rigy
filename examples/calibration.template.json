@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "confirmedByHuman": false,
+  "notes": "TEMPLATE ONLY. Inspect your specific GLB, neutral bind pose, bone names, side-specific anatomical axes and bone-local handedness before enabling. Replace bone name placeholders and frame quaternions. Do NOT set true without inspection.",
+  "joints": [
+    {
+      "bone": "REPLACE_WITH_ACTUAL_FOREARM_BONE_NAME",
+      "profile": "forearm",
+      "confirmed": false,
+      "anatomicalFrameQuat": [0, 0, 0, 1],
+      "notes": "Identity is NOT a universal valid anatomical frame. Verify signed pronation/supination locally."
+    },
+    {
+      "bone": "REPLACE_WITH_ACTUAL_ELBOW_BONE_NAME",
+      "profile": "elbow",
+      "confirmed": false,
+      "anatomicalFrameQuat": [0, 0, 0, 1],
+      "notes": "Verify positive flexion and no sideways/twist motion; do not assign to the wrong bone."
+    }
+  ]
+}
