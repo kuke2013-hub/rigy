@@ -108,7 +108,8 @@ try{
     const id=side+'-wrist';
     await page.evaluate(()=>window.__rigyTestReset());
     await page.waitForTimeout(120);
-    await page.evaluate(({id})=>window.__rigyTestControllerDrag(id,[0,1.30,0.15]),{id});
+    const requested=await page.evaluate(({id})=>window.__rigyTestControllerDrag(id,[0,1.50,0.90]),{id});
+    console.log('OVERHEAD TARGET',id,JSON.stringify(requested));
     await page.waitForTimeout(170);
     const sh=(await page.evaluate(()=>window.__rigyDiagnostics())).shoulderDiagnostics?.[id];
     console.log('OVERHEAD REACH',id,JSON.stringify(sh));
