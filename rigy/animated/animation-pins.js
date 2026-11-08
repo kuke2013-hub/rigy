@@ -30,7 +30,10 @@ const DESKTOP_HOVER_PIXELS=26;
 // each of these FBX bones.
 const BODY_DELTA_LIMIT_DEG={Spine:12,Spine1:12,Spine2:16,Neck:34,Head:24};
 const FEET=['left-ankle','right-ankle'];
-const HIP_MAX_ROOT_SHIFT=0.65; // metres: posture is bounded by the two planted legs
+const HIP_MAX_ROOT_SHIFT=0.65;
+// Keep overall extremity placement independent of the animated pelvis.
+// A small bounded fraction of the original idle motion is retained.
+const IDLE_OFFSET={hand:{gain:0.38,max:0.030},foot:{gain:0.20,max:0.006}}; // metres: posture is bounded by the two planted legs
 function worldToParentPosition(bone,targetWorld){
  const parent=bone.parent; if(!parent)return;
  parent.updateWorldMatrix(true,false);
@@ -528,6 +531,10 @@ export class AnimatedPosePins {
   this.anchorRoot=avatar.parent||avatar;
   this.hips=pickBone(avatar,'Hips');
   this.footAnchors=new Map();
+  this.handAnchors=new Map();
+  this.animationBaseline=new Map();
+  this.animationRaw=new Map();
+  this.bodyAnchorMode=false;
   this.reanchorNextFrame=false;
   this.controllers=[renderer.xr.getController(0),renderer.xr.getController(1)];
   this.listeners=[];
@@ -537,6 +544,7 @@ export class AnimatedPosePins {
   avatar.updateMatrixWorld(true);
   const hips=pickBone(avatar,'Hips'); const forward=V().set(0,0,1).applyQuaternion(worldQ(hips));
   this.captureFootAnchors();
+  this.captureEndpointBaseline();
   for(const limb of [...this.limbs,...this.bodyHandles]){
    if(limb.kind==='effector'||limb.kind==='bend'){
    const direction=worldPos(limb.hinge).sub(worldPos(limb.upper)).normalize();
@@ -588,9 +596,71 @@ export class AnimatedPosePins {
    });
   }
  }
+ /** Store the unmodified Mixamo endpoint positions before procedural IK.
+  * Each fixed root-local anchor receives only a small, bounded idle offset.
+  * ModelAnchor (Zelda whole-object grips) remains free to translate/rotate.
+  */
+ captureEndpointBaseline(){
+  this.avatar.updateMatrixWorld(true);
+  for(const limb of this.limbs.filter(l=>l.kind==='effector')){
+   const raw=this.anchorRoot.worldToLocal(worldPos(limb.effector));
+   this.animationBaseline.set(limb.id,raw.clone());
+   this.animationRaw.set(limb.id,raw.clone());
+   if(limb.kindName==='elbow'&&!this.handAnchors.has(limb.id))
+    this.handAnchors.set(limb.id,{targetLocal:raw.clone()});
+  }
+ }
+ captureAnimatedRaw(){
+  this.avatar.updateMatrixWorld(true);
+  for(const limb of this.limbs.filter(l=>l.kind==='effector'))
+   this.animationRaw.set(limb.id,this.anchorRoot.worldToLocal(worldPos(limb.effector)));
+ }
+ animatedOffset(limb){
+  const origin=this.animationBaseline.get(limb.id),now=this.animationRaw.get(limb.id);
+  if(!origin||!now)return V();
+  const c=limb.kindName==='knee'?IDLE_OFFSET.foot:IDLE_OFFSET.hand;
+  const delta=now.clone().sub(origin).multiplyScalar(c.gain);
+  if(delta.length()>c.max)delta.setLength(c.max);
+  return delta;
+ }
+ endpointGoal(limb){
+  const anchor=(limb.kindName==='knee'?this.footAnchors:this.handAnchors).get(limb.id);
+  if(!anchor)return worldPos(limb.effector);
+  return this.anchorRoot.localToWorld(anchor.targetLocal.clone().add(this.animatedOffset(limb)));
+ }
+ activateBodyAnchors(){
+  if(this.bodyAnchorMode)return;
+  this.bodyAnchorMode=true;
+  this.armPoseLocks.clear();
+  for(const limb of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='elbow')){
+   // An explicitly positioned wrist stays at that chosen position.
+   // Otherwise anchor the position reached at the moment of body editing.
+   if(!this.pins.has(limb.id))
+    this.handAnchors.set(limb.id,{targetLocal:this.anchorRoot.worldToLocal(worldPos(limb.effector))});
+   const raw=this.animationRaw.get(limb.id);
+   if(raw)this.animationBaseline.set(limb.id,raw.clone());
+  }
+ }
+ endpointDiagnostics(){
+  this.avatar.updateMatrixWorld(true);
+  const result={};
+  for(const limb of this.limbs.filter(l=>l.kind==='effector')){
+   const goal=this.endpointGoal(limb),actual=worldPos(limb.effector);
+   const anchor=(limb.kindName==='knee'?this.footAnchors:this.handAnchors).get(limb.id);
+   result[limb.id]={
+    kind:limb.kindName==='knee'?'foot':'hand',anchored:!!anchor,
+    goalMetres:goal.toArray(),
+    baseMetres:anchor?this.anchorRoot.localToWorld(anchor.targetLocal.clone()).toArray():null,
+    actualMetres:actual.toArray(),
+    errorMetres:actual.distanceTo(goal),
+    idleOffsetMetres:this.animatedOffset(limb).length()
+   };
+  }
+  return result;
+ }
  setVisible(v){this.visible=!!v;this.updateVisibility();}
  setEnabled(v){this.enabled=!!v;if(!v)this.active=null;}
- reset(){this.pins.clear();this.armPoseLocks.clear();this.active=null;this.reanchorNextFrame=true;}
+ reset(){this.pins.clear();this.armPoseLocks.clear();this.active=null;this.bodyAnchorMode=false;this.handAnchors.clear();this.reanchorNextFrame=true;}
  destroy(){for(const release of this.listeners)release();this.listeners=[];
   this.renderer.domElement.removeEventListener('pointerdown',this.pointerDown);
   this.renderer.domElement.removeEventListener('pointermove',this.pointerMove);
@@ -730,9 +800,14 @@ export class AnimatedPosePins {
   }else if(maxReach>EPS&&offset.length()>maxReach){goal.copy(start).add(offset.setLength(maxReach));}
   const targetLocal=limb.reference.worldToLocal(goal);
   this.pins.set(limb.id,{type:'effector',targetLocal});
+  if(limb.kindName==='elbow'){
+   this.handAnchors.set(limb.id,{
+    targetLocal:this.anchorRoot.worldToLocal(goal.clone()).sub(this.animatedOffset(limb))
+   });
+  }
   if(limb.kindName==='knee'){
    const old=this.footAnchors.get(limb.id);
-   this.footAnchors.set(limb.id,{targetLocal:targetLocal.clone(),orientationLocal:old.orientationLocal.clone()});
+   this.footAnchors.set(limb.id,{targetLocal:this.anchorRoot.worldToLocal(goal.clone()).sub(this.animatedOffset(limb)),orientationLocal:old.orientationLocal.clone()});
   }
  }
  /** Orange markers are true 3D drag points. The child wrist/ankle tries to
@@ -752,6 +827,7 @@ export class AnimatedPosePins {
    holdTipLocal:holdTipLocal?.clone()||existing?.holdTipLocal?.clone()||limb.reference.worldToLocal(worldPos(limb.effector))});
  }
  storeBodyTarget(handle,target){
+  this.activateBodyAnchors();
   handle.reference.updateWorldMatrix(true,false);
   const current=worldPos(handle.marker);
   const reference=this.pins.get(handle.id)?.originalLocal||handle.reference.worldToLocal(current);
@@ -839,7 +915,7 @@ export class AnimatedPosePins {
    const deltas=[];
    for(const l of this.limbs.filter(x=>x.kind==='effector'&&x.kindName==='knee')){
     const anchor=this.footAnchors.get(l.id);
-    const foot=this.anchorRoot.localToWorld(anchor.targetLocal.clone());
+    const foot=this.endpointGoal(l);
     const thigh=worldPos(l.upper),knee=worldPos(l.hinge),currentFoot=worldPos(l.effector);
     const first=thigh.distanceTo(knee),second=knee.distanceTo(currentFoot);
     const ray=foot.clone().sub(thigh),d=ray.length();if(d<1e-7)continue;
@@ -875,7 +951,8 @@ export class AnimatedPosePins {
    // Fresh animated base first: the mixer already wrote a new pose. A reset
    // reanchors to *that* animated frame, not the previously IK-adjusted frame.
    this.avatar.updateMatrixWorld(true);
-   if(this.reanchorNextFrame){this.captureFootAnchors();this.reanchorNextFrame=false;}
+   if(this.reanchorNextFrame){this.captureFootAnchors();this.captureEndpointBaseline();this.reanchorNextFrame=false;}
+   this.captureAnimatedRaw(); // before modifying hips, knees or shoulders
    // If a shoulder has no animation track, its procedural rotation must not
    // accumulate from the prior frame. Keep a genuine newly animated frame.
    let restored=false;
@@ -901,7 +978,7 @@ export class AnimatedPosePins {
    const corrections=[];
    for(const limb of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='knee')){
     const foot=this.footAnchors.get(limb.id);
-    if(foot)corrections.push(this.anchorRoot.localToWorld(foot.targetLocal.clone()).sub(worldPos(limb.effector)));
+    if(foot)corrections.push(this.endpointGoal(limb).sub(worldPos(limb.effector)));
    }
    if(corrections.length){
     const average=corrections.reduce((a,b)=>a.add(b),V()).divideScalar(corrections.length);
@@ -958,7 +1035,7 @@ export class AnimatedPosePins {
     for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='effector')){
      const anchor=this.footAnchors.get(limb.id);
      if(!anchor)continue;
-     const goal=this.anchorRoot.localToWorld(anchor.targetLocal.clone());
+     const goal=this.endpointGoal(limb);
      solveEffector(limb,goal,animatedUpper.get(limb.upper));
      constrainUpperLeg(limb); // Fail closed even after constrained CCD.
      // Preserve foot world orientation (no planted-foot spinning during idle).
@@ -970,7 +1047,7 @@ export class AnimatedPosePins {
     const contactErrors=[];
     for(const l of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='effector')){
      const anchor=this.footAnchors.get(l.id);
-     if(anchor)contactErrors.push(this.anchorRoot.localToWorld(anchor.targetLocal.clone()).sub(worldPos(l.effector)));
+     if(anchor)contactErrors.push(this.endpointGoal(l).sub(worldPos(l.effector)));
     }
     const worst=contactErrors.reduce((m,d)=>Math.max(m,d.length()),0);
     if(worst<0.004)break; // 4mm contact accuracy in this rig's model space
@@ -983,9 +1060,9 @@ export class AnimatedPosePins {
    if(draggingFoot?.kind==='effector'&&draggingFoot.kindName==='knee'){
     const anchor=this.footAnchors.get(draggingFoot.id);
     const error=worldPos(draggingFoot.effector).distanceTo(
-      this.anchorRoot.localToWorld(anchor.targetLocal.clone()));
+      this.endpointGoal(draggingFoot));
     if(error>0.012){
-     const accepted=this.anchorRoot.worldToLocal(worldPos(draggingFoot.effector));
+     const accepted=this.anchorRoot.worldToLocal(worldPos(draggingFoot.effector)).sub(this.animatedOffset(draggingFoot));
      anchor.targetLocal.copy(accepted);
      const pin=this.pins.get(draggingFoot.id);
      if(pin?.targetLocal)pin.targetLocal.copy(accepted);
@@ -1002,7 +1079,7 @@ export class AnimatedPosePins {
     const wrist=this.pins.get(arm.id);
     const elbow=this.pins.get(arm.id.replace('-wrist','-elbow'));
     if(!wrist&&!elbow)continue;
-    const lock=this.armPoseLocks.get(arm.side);
+    const lock=this.bodyAnchorMode?null:this.armPoseLocks.get(arm.side);
     if(lock){
      arm.clavicle.quaternion.copy(lock.clavicle);
      arm.upper.quaternion.copy(lock.upper);
@@ -1017,7 +1094,8 @@ export class AnimatedPosePins {
     const wrist=this.pins.get(l.id);
     const elbow=this.pins.get(l.id.replace('-wrist','-elbow'));
     const pin=wrist?.targetLocal?wrist:elbow;
-    if(pin?.targetLocal)liftShoulderGirdle(l,l.reference.localToWorld(pin.targetLocal.clone()));
+    if(this.bodyAnchorMode)liftShoulderGirdle(l,this.endpointGoal(l));
+    else if(pin?.targetLocal)liftShoulderGirdle(l,l.reference.localToWorld(pin.targetLocal.clone()));
    }
    // Upper limbs are lower-priority than the grounded legs and body. Elbows
    // use a constrained hinge; shoulders use bounded swing from animation.
@@ -1029,14 +1107,15 @@ export class AnimatedPosePins {
    }
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
     if(!armSolveSides.has(limb.side))continue;
-    const p=this.pins.get(limb.id);if(!p?.targetLocal)continue;
-    const goal=limb.reference.localToWorld(p.targetLocal.clone());
+    const p=this.pins.get(limb.id);
+    if(!this.bodyAnchorMode&&!p?.targetLocal)continue;
+    const goal=this.bodyAnchorMode?this.endpointGoal(limb):limb.reference.localToWorld(p.targetLocal.clone());
     solveEffector(limb,goal,animatedUpper.get(limb.upper));
    }
    // Enforce segment-vs-torso exclusion AFTER all wrist/elbow manipulation.
    // This also checks an existing pinned arm as the torso animates beneath it.
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
-    if(this.pins.has(limb.id)||this.pins.has(limb.id.replace('-wrist','-elbow'))){
+    if(this.bodyAnchorMode||this.pins.has(limb.id)||this.pins.has(limb.id.replace('-wrist','-elbow'))){
      restrictTorsoPenetration(limb,baseArmRotations.get(limb.side));
      const lock=this.armPoseLocks.get(limb.side);
      if(lock&&!armSolveSides.has(limb.side)){
@@ -1049,7 +1128,7 @@ export class AnimatedPosePins {
    // Capture the solved pose as a local, torso-following constraint; the
    // next animation frame will restore it instead of fighting with IK.
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
-    if(!armSolveSides.has(limb.side))continue;
+    if(!armSolveSides.has(limb.side)||this.bodyAnchorMode)continue;
     this.armPoseLocks.set(limb.side,{
      clavicle:limb.clavicle.quaternion.clone(),
      upper:limb.upper.quaternion.clone(),

@@ -49,6 +49,11 @@ jobs:
         run: |
           npm install --no-save playwright@1.65.0
           npx playwright install --with-deps chromium
+      - name: Test pelvis edits preserve 4 endpoint anchors with small animated offsets
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-pelvis.log 2>&1 &
+          sleep 3
+          node tests/pelvis-endpoint-browser.test.mjs
       - name: Test hip and soft tissue restrictions on actual rigged FBX
         run: |
           python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-hip.log 2>&1 &
