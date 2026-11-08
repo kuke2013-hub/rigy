@@ -305,7 +305,6 @@ function solveArmIK(limb,target,animatedUpper){
 }
 
 function solveEffector(limb,target,animatedUpper,lockHinge=false){
- if(limb.kindName==='elbow'&&!lockHinge)return solveArmIK(limb,target,animatedUpper);
  // Damped 2-bone CCD. The arm requires extra convergence passes near
  // 160-degree overhead targets, but both planted legs retain their original
  // capped 8-pass solver to preserve the tested foot contact behaviour.
@@ -316,26 +315,8 @@ function solveEffector(limb,target,animatedUpper,lockHinge=false){
   const joint=worldPos(limb.hinge);
   const axis=limb.hingeAxisLocal.clone().applyQuaternion(worldQ(limb.hinge)).normalize();
   const from=tip.clone().sub(joint),to=target.clone().sub(joint);
-  if(!lockHinge && limb.kindName==='elbow'){
-   // Stable anatomical two-link IK: the triangle formed by humerus,
-   // forearm and wrist goal determines the elbow bend. Direct CCD hinge
-   // steering can accidentally CURL the elbow during overhead animation,
-   // leaving the wrist far below an otherwise feasible shoulder target.
-   const shoulder=worldPos(limb.upper);
-   const a=shoulder.distanceTo(joint),b=joint.distanceTo(tip);
-   const reach=shoulder.distanceTo(target);
-   if(a>EPS&&b>EPS){
-    const desired=Math.acos(clamp((reach*reach-a*a-b*b)/(2*a*b),-1,1));
-    const current=hingeFlexAngle(limb,axis);
-    if(Number.isFinite(current)){
-     const angle=clamp(desired,0,limb.maxBend*RAD);
-     turnHinge(limb,clamp(angle-current,-0.3,0.3));
-    }
-   }
-  }else if(!lockHinge){
-   const delta=signedAxisAngle(from,to,axis);
-   turnHinge(limb,clamp(delta*0.65,-0.28,0.28));
-  }
+  let delta=signedAxisAngle(from,to,axis);
+  if(!lockHinge)turnHinge(limb,clamp(delta*0.65,-0.28,0.28));
   steerUpper(limb,target,animatedUpper);
  }
 }
@@ -410,6 +391,9 @@ export class AnimatedPosePins {
  constructor({avatar,renderer,camera,controls,medicalProfiles,onStatus=()=>{}}){
   this.avatar=avatar;this.renderer=renderer;this.camera=camera;this.controls=controls;this.onStatus=onStatus;
   this.pins=new Map();this.handles=new Map();this.active=null;this.enabled=true;this.visible=true;
+  // A pinned arm must no longer inherit its animation-track rotations: keep
+  // clavicle, humerus and elbow local pose relative to the animated chest.
+  this.armPoseLocks=new Map();
   this.pointerScreen=null;this.hovered=null;
   this.limbs=makeMixamoMaps(avatar,medicalProfiles);
   this.shoulderBones=[...new Set(this.limbs.filter(l=>l.kindName==='elbow').map(l=>l.clavicle))];
@@ -480,7 +464,7 @@ export class AnimatedPosePins {
  }
  setVisible(v){this.visible=!!v;this.updateVisibility();}
  setEnabled(v){this.enabled=!!v;if(!v)this.active=null;}
- reset(){this.pins.clear();this.active=null;this.reanchorNextFrame=true;}
+ reset(){this.pins.clear();this.armPoseLocks.clear();this.active=null;this.reanchorNextFrame=true;}
  destroy(){for(const release of this.listeners)release();this.listeners=[];
   this.renderer.domElement.removeEventListener('pointerdown',this.pointerDown);
   this.renderer.domElement.removeEventListener('pointermove',this.pointerMove);
@@ -603,6 +587,7 @@ export class AnimatedPosePins {
   * metres and snapped every wrist/ankle almost to its shoulder/hip.
   */
  storeTarget(limb,target){
+  if(limb.kindName==='elbow')this.armPoseLocks.delete(limb.side);
   limb.reference.updateWorldMatrix(true,false);
   const start=worldPos(limb.upper),joint=worldPos(limb.hinge),tip=worldPos(limb.effector);
   const maxReach=start.distanceTo(joint)+joint.distanceTo(tip);
@@ -619,6 +604,7 @@ export class AnimatedPosePins {
   * remain where it was at grab start, so moving the knee can flex the shin.
   */
  storeHingeTarget(limb,target,holdTipLocal){
+  if(limb.kindName==='elbow')this.armPoseLocks.delete(limb.side);
   limb.reference.updateWorldMatrix(true,false);
   const start=worldPos(limb.upper),joint=worldPos(limb.hinge);
   const len=start.distanceTo(joint);
@@ -823,9 +809,29 @@ export class AnimatedPosePins {
     const worst=contactErrors.reduce((m,d)=>Math.max(m,d.length()),0);
     if(worst<0.004)break; // 4mm contact accuracy in this rig's model space
    }
+   // If an arm is already posed and the user is not dragging it, restore
+   // its exact local shoulder / upper-arm / elbow rotations on every frame.
+   // This suppresses ONLY those three animation channels, while the animated
+   // spine, hips, neck, legs and whole-object transform keep playing.
+   // Recomputing IK from each animated elbow frame caused an overhead arm
+   // to fall back to the torso during the Mixamo idle cycle.
+   const armSolveSides=new Set();
+   for(const arm of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
+    const wrist=this.pins.get(arm.id);
+    const elbow=this.pins.get(arm.id.replace('-wrist','-elbow'));
+    if(!wrist&&!elbow)continue;
+    const lock=this.armPoseLocks.get(arm.side);
+    if(lock){
+     arm.clavicle.quaternion.copy(lock.clavicle);
+     arm.upper.quaternion.copy(lock.upper);
+     arm.hinge.quaternion.copy(lock.hinge);
+     arm.clavicle.updateMatrixWorld(true);
+    }else armSolveSides.add(arm.side);
+   }
    // Apply overhead shoulder-girdle lift once per shoulder BEFORE wrist/elbow
    // IK. Whole-body motion and pinned feet still take priority.
    for(const l of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
+    if(!armSolveSides.has(l.side))continue;
     const wrist=this.pins.get(l.id);
     const elbow=this.pins.get(l.id.replace('-wrist','-elbow'));
     const pin=wrist?.targetLocal?wrist:elbow;
@@ -834,14 +840,26 @@ export class AnimatedPosePins {
    // Upper limbs are lower-priority than the grounded legs and body. Elbows
    // use a constrained hinge; shoulders use bounded swing from animation.
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='bend')){
+    if(!armSolveSides.has(limb.side))continue;
     const p=this.pins.get(limb.id);if(!p?.targetLocal)continue;
     const goal=limb.reference.localToWorld(p.targetLocal.clone());
     steerHingePosition(limb,goal,animatedUpper.get(limb.upper));
    }
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
+    if(!armSolveSides.has(limb.side))continue;
     const p=this.pins.get(limb.id);if(!p?.targetLocal)continue;
     const goal=limb.reference.localToWorld(p.targetLocal.clone());
     solveEffector(limb,goal,animatedUpper.get(limb.upper));
+   }
+   // Capture the solved pose as a local, torso-following constraint; the
+   // next animation frame will restore it instead of fighting with IK.
+   for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
+    if(!armSolveSides.has(limb.side))continue;
+    this.armPoseLocks.set(limb.side,{
+     clavicle:limb.clavicle.quaternion.clone(),
+     upper:limb.upper.quaternion.clone(),
+     hinge:limb.hinge.quaternion.clone()
+    });
    }
    this.avatar.updateMatrixWorld(true);
    for(const b of this.shoulderBones)this.previousShoulderFrames.set(b,{
