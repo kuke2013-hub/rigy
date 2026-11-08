@@ -432,6 +432,24 @@ function solveArmIK(limb,target,animatedUpper){
  }
 }
 
+/** Solve anchored hands against moving pelvis, preserving signed hinge/shoulder
+ * constraints. If the geometric branch cannot reach, try bounded CCD and keep
+ * the smaller residual. All candidates still go through ROM projection.
+ */
+function solveAnchoredArm(limb,target,animatedUpper){
+ const bones=[limb.clavicle,limb.upper,limb.hinge];
+ const start=bones.map(b=>b.quaternion.clone());
+ const restore=poses=>{for(let i=0;i<bones.length;i++)bones[i].quaternion.copy(poses[i]);limb.clavicle.updateMatrixWorld(true);};
+ solveArmIK(limb,target,animatedUpper);
+ const geometric=bones.map(b=>b.quaternion.clone());
+ const geomError=worldPos(limb.effector).distanceTo(target);
+ if(geomError<.012)return;
+ restore(start);
+ solveEffector(limb,target,animatedUpper);
+ const ccdError=worldPos(limb.effector).distanceTo(target);
+ if(ccdError>=geomError)restore(geometric);
+}
+
 function solveEffector(limb,target,animatedUpper,lockHinge=false){
  // Damped 2-bone CCD. The arm requires extra convergence passes near
  // 160-degree overhead targets, but both planted legs retain their original
@@ -1115,7 +1133,7 @@ export class AnimatedPosePins {
     // stationary hand. Its output is still projected through GH/shoulder ROM.
     if(this.bodyAnchorMode){
      const before=worldPos(limb.effector);
-     solveArmIK(limb,goal,animatedUpper.get(limb.upper));
+     solveAnchoredArm(limb,goal,animatedUpper.get(limb.upper));
      const solved=worldPos(limb.effector);
      this.lastBodyArmSolve??={};
      this.lastBodyArmSolve[limb.id]={
