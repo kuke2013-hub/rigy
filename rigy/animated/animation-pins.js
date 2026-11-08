@@ -897,7 +897,7 @@ export class AnimatedPosePins {
   for(const marker of this.handles.values()){
    const handle=marker.userData.poseHandle;
    const close=inXR&&controllerPositions.some(p=>p.distanceTo(worldPos(marker))<=HANDLE_NEAR_METRES);
-   marker.visible=handle===active||(inXR?close:marker===hovered);
+   marker.visible=handle===active||(inXR?close:handle===this.hovered);
   }
  }
  begin(limb,controller=null,screenPoint=null){
