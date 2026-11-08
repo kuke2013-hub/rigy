@@ -260,7 +260,52 @@ function steerUpper(limb,target,animatedQ){
  constrainUpperArm(limb,animatedQ);
 }
 
+
+/**
+ * Solve shoulder–elbow–wrist triangle directly for pinned arms. Elbow position
+ * follows the law of cosines with the bend branch chosen near the original
+ * animation. Every candidate is re-projected through shoulder complex/GH
+ * constraints, and elbow rotation remains a single bounded hinge.
+ */
+function solveArmIK(limb,target,animatedUpper){
+ for(let pass=0;pass<12;pass++){
+  const shoulder=worldPos(limb.upper),elbow=worldPos(limb.hinge);
+  const wrist=worldPos(limb.effector);
+  const a=shoulder.distanceTo(elbow),b=elbow.distanceTo(wrist);
+  const aim=target.clone().sub(shoulder),d=aim.length();
+  if(a<EPS||b<EPS||d<EPS)return;
+  const maxReach=Math.max(.002,a+b-.001);
+  const minReach=Math.sqrt(Math.max(0,a*a+b*b+2*a*b*Math.cos(limb.maxBend*RAD)))+.001;
+  const reach=clamp(d,Math.min(minReach,maxReach),maxReach);
+  const direction=aim.divideScalar(d);
+  const along=clamp((reach*reach+a*a-b*b)/(2*reach),-a,a);
+  const across=Math.sqrt(Math.max(0,a*a-along*along));
+  const pole=elbow.clone().sub(shoulder);
+  pole.addScaledVector(direction,-pole.dot(direction));
+  if(pole.lengthSq()<1e-10){
+   const hingeAxis=limb.hingeAxisLocal.clone().applyQuaternion(worldQ(limb.hinge));
+   pole.crossVectors(hingeAxis,direction);
+  }
+  if(pole.lengthSq()<1e-10)pole.crossVectors(direction,V().set(0,0,1));
+  if(pole.lengthSq()<1e-10)pole.crossVectors(direction,V().set(1,0,0));
+  pole.normalize();
+  const elbowGoal=shoulder.clone().addScaledVector(direction,along)
+    .addScaledVector(pole,across);
+  const upperNow=elbow.clone().sub(shoulder).normalize();
+  const upperTarget=elbowGoal.sub(shoulder).normalize();
+  if(upperTarget.lengthSq()<EPS)return;
+  useWorldRotation(limb.upper,new THREE.Quaternion().setFromUnitVectors(upperNow,upperTarget));
+  constrainUpperArm(limb,animatedUpper);
+  const joint=worldPos(limb.hinge),end=worldPos(limb.effector);
+  const axis=limb.hingeAxisLocal.clone().applyQuaternion(worldQ(limb.hinge)).normalize();
+  const delta=signedAxisAngle(end.clone().sub(joint),target.clone().sub(joint),axis);
+  turnHinge(limb,clamp(delta,-.45,.45));
+  if(worldPos(limb.effector).distanceToSquared(target)<.000009)break;
+ }
+}
+
 function solveEffector(limb,target,animatedUpper,lockHinge=false){
+ if(limb.kindName==='elbow'&&!lockHinge)return solveArmIK(limb,target,animatedUpper);
  // Damped 2-bone CCD. The arm requires extra convergence passes near
  // 160-degree overhead targets, but both planted legs retain their original
  // capped 8-pass solver to preserve the tested foot contact behaviour.
