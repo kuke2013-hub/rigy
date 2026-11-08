@@ -9,7 +9,7 @@ const distance=(a,b)=>Math.hypot(...a.map((v,i)=>v-b[i]));
 try{
  await page.goto('http://127.0.0.1:8765/?rigy_test=1',{waitUntil:'domcontentloaded',timeout:60000});
  await page.waitForFunction(()=>window.__rigyDiagnostics?.().ready===true,null,{timeout:120000});
- assert.equal((await page.evaluate(()=>window.__rigyDiagnostics())).pelvisPose.version,'RIGY-V0149');
+ assert.equal((await page.evaluate(()=>window.__rigyDiagnostics())).pelvisPose.version,'RIGY-V0155');
  const failures=[];
  for(const id of ['left-elbow','right-elbow','left-knee','right-knee'])for(const sign of [-1,1]){
   await page.evaluate(()=>window.__rigyTestReset());
