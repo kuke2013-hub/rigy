@@ -8,11 +8,18 @@ const browser = await chromium.launch({headless:true,args:[
 ]});
 const page = await browser.newPage({viewport:{width:1440,height:900}});
 const errors=[];
-page.on('pageerror',err=>errors.push(err.message));
+page.on('pageerror',err=>{errors.push(err.message);console.error('BROWSER PAGE ERROR:',err.message);});
+page.on('requestfailed',r=>console.error('BROWSER REQUEST FAILED:',r.url(),r.failure()?.errorText));
 page.on('console',message=>{if(message.type()==='error')console.error('BROWSER CONSOLE:',message.text());});
 try{
   await page.goto(process.env.RIGY_URL || 'http://127.0.0.1:8765/?rigy_test=1',{waitUntil:'domcontentloaded',timeout:60000});
-  await page.waitForFunction(()=>window.__rigyDiagnostics?.().ready===true,null,{timeout:120000});
+  try {
+    await page.waitForFunction(()=>window.__rigyDiagnostics?.().ready===true,null,{timeout:process.env.RIGY_URL?30000:120000});
+  }catch(error){
+    console.error('BROWSER DEBUG:',JSON.stringify(await page.evaluate(() => ({url:location.href,title:document.title,text:document.body?.innerText?.slice(0,1200),diag:window.__rigyDiagnostics?.()||null})).catch(e=>({error:String(e)}))));
+    console.error('PAGE ERRORS:',errors);
+    throw error;
+  }
   const before=await page.evaluate(()=>window.__rigyDiagnostics());
   console.log('Loaded rig:',JSON.stringify(before));
   assert(before.skeletonBones>=20,`missing bones: ${before.skeletonBones}`);
