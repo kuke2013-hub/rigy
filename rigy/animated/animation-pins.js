@@ -260,9 +260,11 @@ function steerUpper(limb,target,animatedQ){
 }
 
 function solveEffector(limb,target,animatedUpper,lockHinge=false){
- // Damped 2-bone CCD. Both joints are reset by AnimationMixer every frame;
- // target stays in spine/hip coordinates, so results are stable across cycles.
- for(let attempt=0;attempt<8;attempt++){
+ // Damped 2-bone CCD. The arm requires extra convergence passes near
+ // 160-degree overhead targets, but both planted legs retain their original
+ // capped 8-pass solver to preserve the tested foot contact behaviour.
+ const passes=limb.kindName==='elbow'?18:8;
+ for(let attempt=0;attempt<passes;attempt++){
   const tip=worldPos(limb.effector);
   if(tip.distanceToSquared(target)<0.000025)break;
   const joint=worldPos(limb.hinge);
