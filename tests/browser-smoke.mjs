@@ -53,20 +53,23 @@ try{
       assert(error<0.015,`${id}: foot sliding at ${sampleTime}s: ${error.toFixed(4)}m`);
   }
   assert.deepEqual(errors,[],'No uncaught browser runtime exception');
-  // v0.7: the previous 100-degree cap prevented overhead reach altogether.
-  // Force BOTH wrists well above the animated pose and verify that total
-  // humerothoracic elevation can exceed shoulder-height under a pinned target.
+  // Torso-referenced test verifies elevation that the user can genuinely
+  // reach; a world-Y drag from a backward-facing animation is not calibrated.
   for(const side of ['left','right']){
     const id=side+'-wrist';
-    await page.evaluate(()=>window.__rigyTestReset());
-    await page.waitForTimeout(120);
-    const requested=await page.evaluate(({id})=>window.__rigyTestControllerDrag(id,[0,1.50,0.90]),{id});
-    console.log('OVERHEAD TARGET',id,JSON.stringify(requested));
-    await page.waitForTimeout(170);
-    const sh=(await page.evaluate(()=>window.__rigyDiagnostics())).shoulderDiagnostics?.[id];
-    console.log('OVERHEAD REACH',id,JSON.stringify(sh));
-    assert(sh&&sh.withinEnvelope, id+' outside total shoulder-complex envelope');
-    assert(sh.elevationDeg>120, id+' failed to lift above shoulder level: '+sh?.elevationDeg);
+    for(const plane of ['forward','lateral']){
+      await page.evaluate(()=>window.__rigyTestReset());
+      await page.waitForTimeout(120);
+      const requested=await page.evaluate(({id,plane})=>
+        window.__rigyTestOverhead(id,160,plane),{id,plane});
+      console.log('OVERHEAD TARGET',JSON.stringify(requested));
+      await page.waitForTimeout(170);
+      const sh=(await page.evaluate(()=>window.__rigyDiagnostics())).shoulderDiagnostics?.[id];
+      console.log('OVERHEAD REACH',id,plane,JSON.stringify(sh));
+      assert(sh&&sh.withinEnvelope,id+' outside total shoulder-complex envelope');
+      assert(sh.goalElevationDeg>150,id+' target not overhead');
+      assert(sh.elevationDeg>140,id+' failed to raise above 140 degrees: '+sh.elevationDeg);
+    }
   }
   // v0.4 regression: a stationary controller grab must NEVER collapse the
   // target onto the parent joint (FBX centimetres vs world metres bug).
