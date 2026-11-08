@@ -4,9 +4,10 @@ import {projectShoulderDirection,SHOULDER_ENVELOPE_V07,SHOULDER_GH_ENVELOPE_V07,
 /**
  * Rigy 0.5 grounded animated-pose overlay.
  * Important update order: AnimationMixer.update() -> PosePins.update() -> render.
- * Limb and body targets live in the unanimated model-anchor frame. Two planted
- * feet remain in that frame while the pelvis, spine and other animated bones
- * adjust to reach them. The source clip itself is never edited.
+ * FEET remain in the unanimated model-anchor reference frame. WRIST/ELBOW
+ * pin targets live relative to the animated upper chest (Spine2), so arm poses
+ * follow the body through idle animation without shifting behind its back.
+ * The source animation clip itself is never edited.
  *
  * Per-bone hinge axes are inferred from first animated pose and body anterior,
  * NOT medically validated anatomical calibration. Shoulder edits are bounded by a conservative torso-relative angular sector.
@@ -72,8 +73,8 @@ function makeMixamoMaps(avatar,profiles) {
  for(const side of ['Left','Right']) {
   const upperArm=pickBone(avatar,`${side}Arm`), forearm=pickBone(avatar,`${side}ForeArm`),hand=pickBone(avatar,`${side}Hand`);
   const thigh=pickBone(avatar,`${side}UpLeg`),shin=pickBone(avatar,`${side}Leg`),foot=pickBone(avatar,`${side}Foot`);
-  limbs.push({id:`${side.toLowerCase()}-wrist`,kind:'effector',label:`${side} wrist · lift arm`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:SHOULDER_ENVELOPE_V07.addedSwingDeg});
-  limbs.push({id:`${side.toLowerCase()}-elbow`,kind:'bend',label:`${side} elbow · bend`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:SHOULDER_ENVELOPE_V07.addedSwingDeg});
+  limbs.push({id:`${side.toLowerCase()}-wrist`,kind:'effector',label:`${side} wrist · lift arm`,reference:spine,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:SHOULDER_ENVELOPE_V07.addedSwingDeg});
+  limbs.push({id:`${side.toLowerCase()}-elbow`,kind:'bend',label:`${side} elbow · bend`,reference:spine,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:SHOULDER_ENVELOPE_V07.addedSwingDeg});
   limbs.push({id:`${side.toLowerCase()}-ankle`,kind:'effector',label:`${side} ankle · lift foot`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
   limbs.push({id:`${side.toLowerCase()}-knee`,kind:'bend',label:`${side} knee · bend`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
  }
@@ -583,7 +584,7 @@ export class AnimatedPosePins {
    const pin=this.pins.get(l.id);
    let goalElevationDeg=null;
    if(pin?.targetLocal){
-    const goal=this.anchorRoot.localToWorld(pin.targetLocal.clone()).sub(worldPos(l.upper)).normalize();
+    const goal=l.reference.localToWorld(pin.targetLocal.clone()).sub(worldPos(l.upper)).normalize();
     const frame=state.frame;
     goalElevationDeg=Math.atan2(Math.hypot(goal.dot(frame.left),goal.dot(frame.forward)),-goal.dot(frame.up))/RAD;
    }
@@ -595,12 +596,7 @@ export class AnimatedPosePins {
     goalElevationDeg,
     girdleDeltaDeg:l.animatedShoulderLocal?l.clavicle.quaternion.angleTo(l.animatedShoulderLocal)/RAD:0,
     wristGoalErrorMetres:pin?.targetLocal?
-      worldPos(l.effector).distanceTo(this.anchorRoot.localToWorld(pin.targetLocal.clone())):null,
-    wristGoalReachMetres:pin?.targetLocal?worldPos(l.upper).distanceTo(this.anchorRoot.localToWorld(pin.targetLocal.clone())):null,
-    armMaxReachMetres:worldPos(l.upper).distanceTo(worldPos(l.hinge))+worldPos(l.hinge).distanceTo(worldPos(l.effector)),
-    upperArmWorld:worldPos(l.upper).toArray(),
-    wristWorld:worldPos(l.effector).toArray(),
-    elbowFlexDeg:l.hingeAxisLocal?hingeFlexAngle(l,l.hingeAxisLocal.clone().applyQuaternion(worldQ(l.hinge)))/RAD:null
+      worldPos(l.effector).distanceTo(l.reference.localToWorld(pin.targetLocal.clone())):null
    };
   }
   return result;
@@ -770,18 +766,18 @@ export class AnimatedPosePins {
     const wrist=this.pins.get(l.id);
     const elbow=this.pins.get(l.id.replace('-wrist','-elbow'));
     const pin=wrist?.targetLocal?wrist:elbow;
-    if(pin?.targetLocal)liftShoulderGirdle(l,this.anchorRoot.localToWorld(pin.targetLocal.clone()));
+    if(pin?.targetLocal)liftShoulderGirdle(l,l.reference.localToWorld(pin.targetLocal.clone()));
    }
    // Upper limbs are lower-priority than the grounded legs and body. Elbows
    // use a constrained hinge; shoulders use bounded swing from animation.
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='bend')){
     const p=this.pins.get(limb.id);if(!p?.targetLocal)continue;
-    const goal=this.anchorRoot.localToWorld(p.targetLocal.clone());
+    const goal=limb.reference.localToWorld(p.targetLocal.clone());
     steerHingePosition(limb,goal,animatedUpper.get(limb.upper));
    }
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
     const p=this.pins.get(limb.id);if(!p?.targetLocal)continue;
-    const goal=this.anchorRoot.localToWorld(p.targetLocal.clone());
+    const goal=limb.reference.localToWorld(p.targetLocal.clone());
     solveEffector(limb,goal,animatedUpper.get(limb.upper));
    }
    this.avatar.updateMatrixWorld(true);

@@ -11,3 +11,7 @@ These are software constraints derived from the broad movement anatomy and in-vi
 **Primary references:** [McClure et al. in-vivo overhead reach](https://pmc.ncbi.nlm.nih.gov/articles/PMC2841046/) and [Wu et al., ISB shoulder joint coordinate standard](https://pubmed.ncbi.nlm.nih.gov/15844264/).
 
 Zelda v13 physics/grabbing remains byte-identical, and grounded feet, near-controller markers and animation remain unchanged.
+
+## Animation-relative arm pins (Rigy 0.8)
+
+A shoulder cap cannot preserve an arm pose if the arm's target is held in room space while the animated torso leans and turns. Arm-wrist and elbow targets now use the **animated Spine2 chest frame**. When the body moves in the idle animation, the pinned arm pose follows the chest. **Foot/ankle contacts remain in the unanimated model frame**; they do not follow pelvis animation. This fixes the observed ~28 cm wrist-target drift at a later clip timestamp. Browser regression samples the arm after a time jump and checks both elevation and wrist-goal accuracy.
