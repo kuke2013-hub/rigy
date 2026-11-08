@@ -1,0 +1,41 @@
+{
+  "title": "Standing W_Briefcase Idle",
+  "format": "FBX-binary",
+  "originalName": "Standing W_Briefcase Idle.fbx",
+  "bytes": 3367024,
+  "sha256": "cc0eb651ca4d9b93f7fbdc4d97846132d4ba390cad296db5f6b876001e3768e2",
+  "parts": [
+    "part-000.txt",
+    "part-001.txt",
+    "part-002.txt",
+    "part-003.txt",
+    "part-004.txt",
+    "part-005.txt",
+    "part-006.txt",
+    "part-007.txt",
+    "part-008.txt",
+    "part-009.txt",
+    "part-010.txt",
+    "part-011.txt",
+    "part-012.txt",
+    "part-013.txt",
+    "part-014.txt",
+    "part-015.txt",
+    "part-016.txt",
+    "part-017.txt",
+    "part-018.txt",
+    "part-019.txt",
+    "part-020.txt",
+    "part-021.txt",
+    "part-022.txt",
+    "part-023.txt",
+    "part-024.txt",
+    "part-025.txt"
+  ],
+  "animation": {
+    "durationSeconds": 13.933333333333334,
+    "keyframes": 419,
+    "nominalFPS": 30
+  },
+  "textureNote": "FBX references Image_0 at external path; image is not embedded in uploaded asset."
+}
