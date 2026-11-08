@@ -5,7 +5,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './VR_OBJECTS_TEMPLATE/physics-grab.js?v=template-1';
 import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-0.2';
-import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.2';
+import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
 const $ = (id) => document.getElementById(id);
@@ -305,6 +305,35 @@ renderer.xr.addEventListener('sessionend',()=>{
   setStatus('Passthrough session ended. Desktop preview active.');
 });
 window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+// Read-only runtime diagnostics allow the automated browser smoke test to
+// distinguish "source files uploaded" from an actually running animated rig.
+window.__rigyDiagnostics = () => ({
+  ready: !!(avatar && mixer && posePins),
+  characterLoaded: !!avatar,
+  animationClip: clip?.name || null,
+  animationDuration: clip?.duration || 0,
+  animationTime: mixer?.time || 0,
+  skeletonBones: avatar ? (() => {let n=0;avatar.traverse(o=>{if(o.isBone)n++;});return n;})() : 0,
+  handleCount: posePins?.handles?.size || 0,
+  pinnedCount: posePins?.pins?.size || 0,
+  status: $('status').textContent,
+  vrPresenting: renderer.xr.isPresenting
+});
+// Test-only desktop hook; not exposed in the standard public UI.
+if(new URLSearchParams(location.search).has('rigy_test')) {
+  window.__rigyTestPin = (id, offset) => {
+    if(!posePins)throw new Error('Pose solver not ready');
+    if(!Array.isArray(offset)||offset.length!==3||offset.some(x=>!Number.isFinite(x)))
+      throw new Error('Finite XYZ offset required');
+    const limb=posePins.limbs.find(x=>x.id===id&&x.kind==='effector');
+    if(!limb)throw new Error('No effector named '+id);
+    limb.effector.updateWorldMatrix(true,false);
+    const target=limb.effector.getWorldPosition(new THREE.Vector3())
+      .add(new THREE.Vector3(...offset));
+    posePins.storeTarget(limb,target);
+    return {target:target.toArray(),pinCount:posePins.pins.size};
+  };
+}
 let previous=0;
 renderer.setAnimationLoop((time,frame)=>{
   const dt=previous?Math.min(.05,(time-previous)/1000):0;

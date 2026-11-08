@@ -7,3 +7,5 @@ The source is stored byte-for-byte in base64 text chunks because the available G
 Inspected: binary FBX 7700, Mixamo skeleton (33 limb nodes), 1 skinned mesh, 28 skin deformers, one `mixamo.com` animation stack, 171 curves (mostly 419 samples spanning 13.933s at 30 fps), geometry about 36k control points.
 
 **Missing texture:** FBX video/texture objects refer to `/Users/iki/Downloads/textures/packed/Image_0` but do not contain the actual image. The model may render with untextured fallback. The original file is not modified.
+
+Version 0.3: `tests/reconstruct_fbx.py` restores the byte-identical `standing-idle.fbx` from committed fragments. GitHub Actions attempts to commit this binary into the repo and the Pages build always reconstructs it for hosting. The browser prefers this single URL and falls back to the original fragments if the binary is missing.

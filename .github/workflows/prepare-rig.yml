@@ -1,0 +1,33 @@
+name: Restore original FBX binary
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/prepare-rig.yml
+      - tests/reconstruct_fbx.py
+      - models/standing-idle/part-*.txt
+      - models/standing-idle/manifest.json
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Reconstruct and verify source FBX
+        run: |
+          python3 tests/reconstruct_fbx.py
+          python3 tests/verify_animated_fbx.py
+      - name: Commit the original binary FBX into Rigy
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add models/standing-idle/standing-idle.fbx
+          if git diff --cached --quiet; then
+            echo 'Identical binary already committed.'
+          else
+            git commit -m 'Add exact verified original Mixamo FBX binary for headset demo'
+            git push origin HEAD:main
+          fi

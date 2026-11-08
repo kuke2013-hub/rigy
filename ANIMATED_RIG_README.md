@@ -1,4 +1,4 @@
-# Rigy animated-pose test (v0.2, 2026-11-08)
+# Rigy animated-pose test (v0.3, 2026-11-08)
 
 ## Goal
 Load the user-supplied **Standing W_Briefcase Idle.fbx** character, continually loop its source animation, and **retain independent user-created hand/leg poses while the rest of the Mixamo animation continues**. The root `index.html` contains a single **Enter VR / Passthrough** button (using WebXR `immersive-ar`) and a desktop preview. Zelda v13 whole-object controllers are imported byte-for-byte and unchanged from `VR_OBJECTS_TEMPLATE/physics-grab.js`.
@@ -40,3 +40,10 @@ node --check rigy/animated/model-bundle.js
 ```
 
 These checks **do not prove** that the FBX loads and renders correctly in a browser, that its missing texture resolves, that pose markers/IK are visually correct, or that Quest XR trigger/side grips have been tested. Those require a browser and real Quest 3/3S testing. Do not call a GitHub source commit a verified Pages deployment.
+
+## Reliable headset asset build and automated verification (v0.3)
+
+- The full FBX remains committed unchanged as base64 fragments. `tests/reconstruct_fbx.py` regenerates an identical `models/standing-idle/standing-idle.fbx`. The dedicated `Restore original FBX binary` GitHub Action also attempts to commit the direct binary into `main` using a narrowly scoped `contents:write` permission; failures do not destroy the preserved parts.
+- During Pages deployment the same verified reconstruction runs **before** the static artifact is uploaded. The browser first fetches the single native FBX file; if absent, it uses six parallel fragment fetches. Both paths verify the file SHA-256 before parsing.
+- `Validate animated rig prototype` runs Python hash checks, JavaScript syntax, Node model-loading tests and an actual headless Chromium import/animation/pose smoke test using Playwright. A green browser result is a desktop runtime test, **not** a Quest/VR hardware test.
+- GitHub Pages must still be enabled in repository Settings → Pages, source **GitHub Actions**, as the default GitHub workflow token cannot create a Pages site.

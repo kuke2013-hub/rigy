@@ -19,10 +19,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Build exact original FBX file for direct headset download
+        run: python3 tests/reconstruct_fbx.py
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - name: Upload static page and assets
         uses: actions/upload-pages-artifact@v3
         with:
