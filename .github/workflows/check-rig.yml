@@ -9,6 +9,7 @@ on:
       - anatomy/**
       - index.html
       - rigy/animated/**
+      - rigy/controls/**
       - tests/**
       - models/standing-idle/manifest.json
 permissions:
@@ -28,6 +29,9 @@ jobs:
           node --check index-app.js
           node --check rigy/animated/model-bundle.js
           node --check rigy/animated/animation-pins.js
+          node --check rigy/controls/physics-grab.js
+          node --check rigy/controls/grip-scale.mjs
+          node --test tests/two-grip-scale.test.mjs
           node --test tests/model-loader.test.mjs
           node --test tests/shoulder-envelope.test.mjs
           node --test tests/torso-collision.test.mjs
