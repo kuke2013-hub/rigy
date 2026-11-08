@@ -10,7 +10,7 @@ try{
  await page.goto('http://127.0.0.1:8765/?rigy_test=1',{waitUntil:'domcontentloaded',timeout:60000});
  await page.waitForFunction(()=>window.__rigyDiagnostics?.().ready===true,null,{timeout:120000});
  let d=await page.evaluate(()=>window.__rigyDiagnostics());
- assert.equal(d.pelvisPose?.version,'RIGY-V0147');
+ assert.equal(d.pelvisPose?.version,'RIGY-V0148');
  assert.equal(d.pelvisPose?.animationInfluence,.15);
  assert.equal(d.pelvisPose?.anchoredFeet,2);
  assert.equal(d.pelvisPose?.anchoredHands,2);
@@ -57,23 +57,36 @@ try{
  d=await page.evaluate(()=>window.__rigyDiagnostics());
  assert(distance(d.endpointAnchors['left-wrist'].baseMetres,handAnchor)<.00001,
   'Placed wrist follows pelvis instead of remaining an anchor');
- // Raised hand should remain anchored when the underlying animation
- // advances. The V0144 elbow-branch reset produced a 20cm displacement.
- // Let the mixer advance after reset, as in the original overhead smoke.
+ // User's primary interaction: position the wrist, reposition the pelvis,
+ // then verify that the hand is still anchored as the FBX plays. This tests
+ // normal reachable poses; the extreme 160-degree overhead IK regression is
+ // deliberately retained (with unchanged tolerance) in browser-smoke.mjs.
  await page.evaluate(()=>window.__rigyTestReset());
- await page.waitForTimeout(180);
- await page.evaluate(()=>window.__rigyTestOverhead('left-wrist',160,'forward'));
- console.log('IMMEDIATE RAISED WRIST',
-  JSON.stringify((await page.evaluate(()=>window.__rigyDiagnostics())).shoulderDiagnostics['left-wrist']));
- await page.waitForTimeout(170);
- let raised=(await page.evaluate(()=>window.__rigyDiagnostics())).shoulderDiagnostics['left-wrist'];
- console.log('INITIAL OVERHEAD HAND',JSON.stringify(raised));
- assert(raised.wristGoalErrorMetres<.075,
-  'Failed to establish raised arm: '+raised.wristGoalErrorMetres);
- raised=(await page.evaluate(()=>window.__rigyTestJumpAnimation(6.4))).shoulderDiagnostics['left-wrist'];
- console.log('OVERHEAD HAND CONTINUITY',JSON.stringify(raised));
- assert(raised.wristGoalErrorMetres<.075,
-  'Pinned wrist drifted on animated frame: '+raised.wristGoalErrorMetres);
+ await page.waitForTimeout(150);
+ const controlledHand=await page.evaluate(()=>
+   window.__rigyTestControllerDrag('left-wrist',[.025,.025,.015]));
+ assert(controlledHand.pinCount>0,'Hand must be pinned after its controller is released');
+ let firstHand=(await page.evaluate(()=>window.__rigyDiagnostics())).endpointAnchors['left-wrist'];
+ const fixedHand=firstHand.baseMetres;
+ console.log('PLACED HAND',JSON.stringify({controller:controlledHand,anchor:firstHand}));
+ assert(firstHand.errorMetres<.035,
+   'Manually placed wrist failed to settle near its anchor: '+firstHand.errorMetres);
+ const shiftedPelvis=await page.evaluate(()=>
+   window.__rigyTestControllerDrag('pelvis',[.025,-.018,.010]));
+ assert(shiftedPelvis.moved>.008,'Anchored hand must not make pelvis immovable');
+ for(const time of [1.5,6.4,12.1]){
+  const diag=await page.evaluate(t=>window.__rigyTestJumpAnimation(t),time);
+  const left=diag.endpointAnchors['left-wrist'];
+  console.log('REPOSITIONED HAND CONTINUITY',time,JSON.stringify({
+    pelvis:diag.pelvisPose,anchor:left,shoulder:diag.shoulderDiagnostics['left-wrist']
+  }));
+  assert(distance(fixedHand,left.baseMetres)<.00001,
+    'Manually placed hand anchor moved when pelvis or animation moved');
+  assert(left.errorMetres<.035,
+    'Rendered hand moved too far from fixed target at '+time+': '+left.errorMetres);
+  assert.equal(diag.shoulderDiagnostics['left-wrist'].absoluteJointLimitsOK,true,
+    'Shoulder/elbow anatomy overridden by animation at '+time);
+ }
  assert.deepEqual(failures,[]);
- console.log('PASS: stationary pelvis, both hands/feet anchored, animation reduced and raised hand retained');
+ console.log('PASS: stationary and repositioned pelvis, all four anchors, moved hand and 15% original animation');
 }finally{await browser.close();}

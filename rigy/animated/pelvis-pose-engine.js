@@ -20,7 +20,7 @@ const world=b=>b.getWorldPosition(V());
 export class PelvisPoseEngine extends AnimatedPosePins {
  constructor(options){
   super(options);
-  this.engineVersion='RIGY-V0147';
+  this.engineVersion='RIGY-V0148';
   this.animationInfluence=motionWeight(.15);
   this.pelvisAnchored=true;
   this.bodyAnchorMode=true;
