@@ -368,6 +368,12 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
       goal:goal?.toArray()||null,moved:before.distanceTo(after),
       deviation:goal?after.distanceTo(goal):null,pinCount:posePins.pins.size};
   };
+  window.__rigyTestJumpAnimation = time => {
+    if(!posePins||!mixer||!Number.isFinite(time))throw new Error('No running animated rig');
+    mixer.setTime(time);
+    posePins.update();
+    return window.__rigyDiagnostics();
+  };
   window.__rigyTestReset=()=>posePins?.reset();
 }
 let previous=0;

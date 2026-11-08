@@ -43,7 +43,15 @@ try{
   assert(after.animationTime>before.animationTime+.2,'Animation must continue advancing');
   assert.equal(after.pinnedCount,1,'Pin must persist while clip keeps playing');
   console.log('Foot contact after animation:',JSON.stringify(after.footErrors));
-  for(const [id,error] of Object.entries(after.footErrors||{}))assert(error<0.07,`${id}: planted-foot drift ${error.toFixed(3)} metres`);
+  for(const [id,error] of Object.entries(after.footErrors||{}))assert(error<0.015,`${id}: planted-foot drift ${error.toFixed(3)} metres`);
+  // Sample the WHOLE 13.93-second Mixamo clip, including nearly a full cycle.
+  // Pins must remain in the unanimated foot reference frame throughout.
+  for(const sampleTime of [1.5,4.2,7.7,11.3,13.65]){
+    const sample=await page.evaluate(t=>window.__rigyTestJumpAnimation(t),sampleTime);
+    console.log('Grounding over full clip',sampleTime,JSON.stringify(sample.footErrors));
+    for(const [id,error] of Object.entries(sample.footErrors||{}))
+      assert(error<0.015,`${id}: foot sliding at ${sampleTime}s: ${error.toFixed(4)}m`);
+  }
   assert.deepEqual(errors,[],'No uncaught browser runtime exception');
   // v0.4 regression: a stationary controller grab must NEVER collapse the
   // target onto the parent joint (FBX centimetres vs world metres bug).
@@ -68,7 +76,7 @@ try{
     const grounded=await page.evaluate(()=>window.__rigyDiagnostics().footErrors);
     for(const [foot,error] of Object.entries(grounded||{})){
       console.log('Foot contact',id,foot,error);
-      assert(Number.isFinite(error)&&error<.08,`${id} must not unplant ${foot}: ${error}`);
+      assert(Number.isFinite(error)&&error<.028,`${id} must not unplant ${foot}: ${error}`);
     }
   }
   const continuing=await page.evaluate(()=>window.__rigyDiagnostics().animationTime);
