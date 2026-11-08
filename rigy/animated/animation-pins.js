@@ -1151,7 +1151,7 @@ export class AnimatedPosePins {
     const foot=this.footAnchors.get(limb.id);
     if(foot)corrections.push(this.endpointGoal(limb).sub(worldPos(limb.effector)));
    }
-   if(corrections.length){
+   if(corrections.length&&!this.pelvisAnchored){
     const average=corrections.reduce((a,b)=>a.add(b),V()).divideScalar(corrections.length);
     this.moveHips(average);
    }
@@ -1170,14 +1170,14 @@ export class AnimatedPosePins {
    const kneeGoals=[];
    for(const l of this.limbs.filter(l=>l.kind==='bend'&&l.kindName==='knee')){
     const p=this.pins.get(l.id);
-    if(p?.targetLocal)kneeGoals.push(this.anchorRoot.localToWorld(p.targetLocal.clone()).sub(worldPos(l.hinge)));
+    if(p?.targetLocal){const target=this.jointTarget?this.jointTarget(l,p):this.anchorRoot.localToWorld(p.targetLocal.clone());kneeGoals.push(target.sub(worldPos(l.hinge)));}
    }
-   if(kneeGoals.length&&!pelvisPin){
+   if(kneeGoals.length&&!pelvisPin&&!this.pelvisAnchored){
     const delta=kneeGoals.reduce((a,b)=>a.add(b),V()).divideScalar(kneeGoals.length).multiplyScalar(0.36);
     if(delta.length()>0.24)delta.setLength(0.24);
     this.moveHips(delta);
    }
-   this.keepPelvisWithinLegReach();
+   if(!this.pelvisAnchored)this.keepPelvisWithinLegReach();
    // The medical-reference hip cone is a hard upper limit on BOTH thighs;
    // it is enforced even when the source animation asks for a larger angle.
    for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='effector'))constrainUpperLeg(limb);
@@ -1185,7 +1185,7 @@ export class AnimatedPosePins {
    // bounded per vertebral group by conservative rig-specific angular caps.
    for(const h of this.bodyHandles.filter(h=>h.kind==='body')){
     const p=this.pins.get(h.id);if(!p?.targetLocal)continue;
-    const desired=this.anchorRoot.localToWorld(p.targetLocal.clone());
+    const desired=this.jointTarget?this.jointTarget(h,p):this.anchorRoot.localToWorld(p.targetLocal.clone());
     steerBodyHandle(h,desired,animatedBody);
    }
    // Leg contact priority: knee position is a secondary constraint while
@@ -1200,7 +1200,7 @@ export class AnimatedPosePins {
     if(pass===0)for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='bend')){
      const pin=this.pins.get(limb.id);
      if(!pin?.targetLocal)continue;
-     const goal=this.anchorRoot.localToWorld(pin.targetLocal.clone());
+     const goal=this.jointTarget?this.jointTarget(limb,pin):this.anchorRoot.localToWorld(pin.targetLocal.clone());
      steerHingePosition(limb,goal,animatedUpper.get(limb.upper));
     }
     for(const limb of this.limbs.filter(l=>l.kindName==='knee'&&l.kind==='effector')){
@@ -1273,7 +1273,7 @@ export class AnimatedPosePins {
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='bend')){
     if(!armSolveSides.has(limb.side))continue;
     const p=this.pins.get(limb.id);if(!p?.targetLocal)continue;
-    const goal=limb.reference.localToWorld(p.targetLocal.clone());
+    const goal=this.jointTarget?this.jointTarget(limb,p):limb.reference.localToWorld(p.targetLocal.clone());
     steerHingePosition(limb,goal,animatedUpper.get(limb.upper));
    }
    for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){

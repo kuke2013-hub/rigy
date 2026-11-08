@@ -1,0 +1,155 @@
+import * as THREE from 'three';
+import {AnimatedPosePins} from './animation-pins.js?v=rigy-1.3.9';
+import {motionWeight,relativeMotion} from './pelvis-pose-math.mjs';
+
+/**
+ * RIGY V0141: pelvis-centred animation compositor with stable endpoints.
+ *
+ * The Mixamo clip remains unchanged. An immutable t=0 pose is used every
+ * frame, so rotations from an earlier IK solve cannot become an animation
+ * reference. The FBX's original motion is blended at 15% amplitude.
+ * The pelvis is stationary unless explicitly moved by the user.
+ * Both hands and both feet hold root-space placement targets; head, torso,
+ * neck, elbows and knees follow the pelvis and retain subtle source motion.
+ *
+ * The anatomically limited IK and the existing 12 Quest grab dispatchers are
+ * reused as low-level solvers; this class owns the NEW authoritative state.
+ */
+const V=()=>new THREE.Vector3();
+const world=b=>b.getWorldPosition(V());
+export class PelvisPoseEngine extends AnimatedPosePins {
+ constructor(options){
+  super(options);
+  this.engineVersion='RIGY-V0141';
+  this.animationInfluence=motionWeight(.15);
+  this.pelvisAnchored=true;
+  this.bodyAnchorMode=true;
+  this.armPoseLocks.clear();
+  this.reanchorNextFrame=false;
+  this.anchorRoot.updateWorldMatrix(true,false);
+  this.pelvisHomeLocal=this.anchorRoot.worldToLocal(world(this.hips));
+  this.boneNeutral=new Map();
+  this.sourcePose=new Map();
+  this.avatar.traverse(b=>{
+   if(!b.isBone)return;
+   const initial={q:b.quaternion.clone(),p:b.position.clone()};
+   this.boneNeutral.set(b,initial);
+   this.sourcePose.set(b,{q:initial.q.clone(),p:initial.p.clone()});
+  });
+  // These four root-relative end positions are the canonical anchors.
+  // Their absolute positions change only through an explicit endpoint grip
+  // or a whole-model Zelda grip, NEVER through pelvis reposition or idle.
+  this.homeEndpoints=new Map();
+  for(const limb of this.limbs.filter(l=>l.kind==='effector')){
+   const anchor=(limb.kindName==='knee'?this.footAnchors:this.handAnchors).get(limb.id);
+   this.homeEndpoints.set(limb.id,{targetLocal:anchor.targetLocal.clone(),
+     orientationLocal:anchor.orientationLocal?.clone()});
+  }
+  // Knee/elbow/body edits should travel with the pelvis, not remain fixed
+  // to the whole-object anchor as they did in older patch-based versions.
+  for(const l of this.limbs.filter(l=>l.kind==='bend'&&l.kindName==='knee'))
+   l.reference=this.hips;
+  for(const h of this.bodyHandles.filter(h=>h.kind==='body'))
+   h.reference=this.hips;
+  this.homeJointPelvis=new Map();
+  this.rawJointPelvis=new Map();
+  this.jointMicroMotion=new Map();
+  this.avatar.updateMatrixWorld(true);
+  for(const h of [...this.limbs,...this.bodyHandles]){
+   const p=this.hips.worldToLocal(world(h.marker));
+   this.homeJointPelvis.set(h.id,p.clone());
+   this.rawJointPelvis.set(h.id,p);
+  }
+ }
+ setAnimationInfluence(value){this.animationInfluence=motionWeight(Number(value));}
+ // Never let a clip displace an anchored wrist or foot.
+ animatedOffset(){return V();}
+ endpointGoal(limb){
+  const anchor=(limb.kindName==='knee'?this.footAnchors:this.handAnchors).get(limb.id);
+  return anchor?this.anchorRoot.localToWorld(anchor.targetLocal.clone()):world(limb.effector);
+ }
+ // Middle joint targets use pelvis motion as the reference and retain 15% of
+ // the ORIGINAL programmed clip around a manually chosen resting position.
+ jointTarget(handle,pin){
+  const desired=handle.reference.localToWorld(pin.targetLocal.clone());
+  const residual=this.jointMicroMotion.get(handle.id);
+  if(residual&&handle.id!=='pelvis'){
+   const pivot=world(this.hips);
+   desired.add(this.hips.localToWorld(residual.clone()).sub(pivot));
+  }
+  return desired;
+ }
+ // Called immediately BEFORE advancing the animation mixer.
+ prepareAnimationFrame(){
+  for(const [b,neutral] of this.boneNeutral){
+   b.quaternion.copy(neutral.q);
+   b.position.copy(neutral.p);
+  }
+  this.avatar.updateMatrixWorld(true);
+ }
+ // Called immediately AFTER the mixer, BEFORE constraint solving.
+ captureSourceAnimation(){
+  for(const [b] of this.boneNeutral)
+   this.sourcePose.set(b,{q:b.quaternion.clone(),p:b.position.clone()});
+  this.avatar.updateMatrixWorld(true);
+  for(const h of [...this.limbs,...this.bodyHandles])
+   this.rawJointPelvis.set(h.id,this.hips.worldToLocal(world(h.marker)));
+ }
+ applyAnimatedPose(){
+  const intensity=this.animationInfluence;
+  for(const [b,base] of this.boneNeutral){
+   const source=this.sourcePose.get(b)||base;
+   b.quaternion.copy(base.q).slerp(source.q,intensity);
+   b.position.copy(base.p).lerp(source.p,intensity);
+  }
+  this.avatar.updateMatrixWorld(true);
+  this.jointMicroMotion.clear();
+  for(const [id,base] of this.homeJointPelvis){
+   if(id==='pelvis'||id.endsWith('-wrist')||id.endsWith('-ankle'))continue;
+   const source=this.rawJointPelvis.get(id);
+   if(!source)continue;
+   const residual=relativeMotion(source,base,intensity,.025);
+   this.jointMicroMotion.set(id,new THREE.Vector3(residual.x,residual.y,residual.z));
+  }
+  // Only a user-set pelvis pin may change the pelvis world position.
+  const pin=this.pins.get('pelvis');
+  const targetLocal=pin?.targetLocal||this.pelvisHomeLocal;
+  this.anchorRoot.updateWorldMatrix(true,false);
+  const target=this.anchorRoot.localToWorld(targetLocal.clone());
+  const parent=this.hips.parent;
+  parent.updateWorldMatrix(true,false);
+  this.hips.position.copy(parent.worldToLocal(target));
+  this.hips.updateMatrixWorld(true);
+ }
+ update(){
+  if(!this.enabled)return;
+  this.applyAnimatedPose();
+  super.update();
+ }
+ reset(){
+  super.reset();
+  this.bodyAnchorMode=true;
+  this.reanchorNextFrame=false;
+  if(!this.homeEndpoints)return;
+  this.handAnchors.clear();this.footAnchors.clear();
+  for(const [id,saved] of this.homeEndpoints){
+   const value={targetLocal:saved.targetLocal.clone()};
+   if(saved.orientationLocal)value.orientationLocal=saved.orientationLocal.clone();
+   (id.endsWith('-ankle')?this.footAnchors:this.handAnchors).set(id,value);
+  }
+  this.jointMicroMotion.clear();
+ }
+ pelvisDiagnostics(){
+  const actual=world(this.hips);
+  const pin=this.pins.get('pelvis');
+  const local=pin?.targetLocal||this.pelvisHomeLocal;
+  const intended=this.anchorRoot.localToWorld(local.clone());
+  return {
+   version:this.engineVersion,animationInfluence:this.animationInfluence,
+   pelvisWorld:actual.toArray(),pelvisGoalWorld:intended.toArray(),
+   pelvisDriftMetres:actual.distanceTo(intended),
+   anchoredHands:this.handAnchors.size,anchoredFeet:this.footAnchors.size,
+   rootRelativeAnchorIds:[...this.homeEndpoints.keys()]
+  };
+ }
+}

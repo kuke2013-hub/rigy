@@ -33,7 +33,7 @@ try{
    id+' failed to hold placement while pelvis moved: '+goal.errorMetres);
  }
  const base=after.endpointAnchors;
- let subtlemotion=false;
+ let subtleBodyMotion=false;
  for(const t of [1.25,3.8,8.6,12.9]){
   const diag=await page.evaluate(t=>window.__rigyTestJumpAnimation(t),t);
   console.log('ANIMATED ANCHORS',t,JSON.stringify(diag.endpointAnchors));
@@ -43,10 +43,11 @@ try{
    assert(e.idleOffsetMetres<=(e.kind==='foot'?.00601:.03001));
    assert(e.errorMetres<(e.kind==='foot'?.028:.030),
     id+' failed at '+t+'s: '+e.errorMetres.toFixed(3)+'m');
-   if(e.kind==='hand'&&dist(e.goalMetres,b.goalMetres)>.001)subtlemotion=true;
+   if(e.kind==='hand'&&dist(e.goalMetres,b.goalMetres)>.001)throw new Error('Hand should be stationary under animation');
+   if(diag.pelvisPose?.animationInfluence>0)subtleBodyMotion=true;
   }
  }
- assert(subtlemotion,'idle clip should still contribute subtle hand motion');
+ assert(subtleBodyMotion,'idle clip influence should remain enabled while endpoints are fixed');
  // A manually repositioned wrist must establish a GLOBAL placement anchor,
  // not a point attached to the animated chest that follows pelvis movement.
  await page.evaluate(()=>window.__rigyTestReset());

@@ -4,7 +4,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './rigy/controls/physics-grab.js?v=rigy-1.3.5';
-import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-1.3.9';
+import { PelvisPoseEngine } from './rigy/animated/pelvis-pose-engine.js?v=rigy-1.4.1';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
@@ -53,6 +53,8 @@ let avatar=null,physics=null,modelSize=null;
 let mixer=null,posePins=null,clip=null,animationPaused=false;
 let modelLoading=false;
 const animationSpeedEl=$('animationSpeed');
+const animationInfluenceEl=$('animationInfluence');
+animationInfluenceEl.addEventListener('input',()=>posePins?.setAnimationInfluence(Number(animationInfluenceEl.value)/100));
 const showHandlesEl=$('showHandles');
 const medicalProfilesPromise=fetch('./anatomy/medical-joints.v1.json').then(r=>{if(!r.ok)throw new Error('Medical reference data unavailable');return r.json();}).then(data=>data.profiles);
 async function installAnimation(root, clips){
@@ -70,8 +72,9 @@ async function installAnimation(root, clips){
   try{
     const medicalProfiles=await medicalProfilesPromise;
     if(avatar!==root)return;
-    posePins=new AnimatedPosePins({avatar:root,renderer,camera,controls,medicalProfiles,onStatus:setStatus});
+    posePins=new PelvisPoseEngine({avatar:root,renderer,camera,controls,medicalProfiles,onStatus:setStatus});
     posePins.setVisible(showHandlesEl.checked);
+    posePins.setAnimationInfluence(Number(animationInfluenceEl.value)/100);
     setStatus(`Playing ${clip.name || 'Idle'} (${clip.duration.toFixed(2)} s). Bring a controller within 30 cm of a joint to reveal its point; hold trigger and MOVE that point in 3D. Release to pin; animation continues.`);
   }catch(error){console.warn('Rig pin setup failed',error);setStatus(`Animation running, but posing is unavailable: ${error.message}`);}
 }
@@ -268,7 +271,7 @@ function resetView(){
   if(!renderer.xr.isPresenting){camera.position.set(0,1.65,2.65);controls.target.set(0,.75,-1.85);controls.update();}
   posePins?.reset();
   physics?.reset();
-  setStatus('Rigy 1.3.9 reset. Side grips grab the character; both grips resize linearly from 10% to 350%.');
+  setStatus('Rigy 1.4.1 reset. Side grips grab the character; both grips resize linearly from 10% to 350%.');
 }
 $('reset').addEventListener('click',resetView);
 
@@ -309,6 +312,7 @@ window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camer
 // distinguish "source files uploaded" from an actually running animated rig.
 window.__rigyDiagnostics = () => ({
   ready: !!(avatar && mixer && posePins),
+  pelvisPose:posePins?.pelvisDiagnostics?.()||null,
   wholeCharacterGrip:physics?.getDebugState?.()||null,
   characterLoaded: !!avatar,
   animationClip: clip?.name || null,
@@ -401,7 +405,9 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
   };
   window.__rigyTestJumpAnimation = time => {
     if(!posePins||!mixer||!Number.isFinite(time))throw new Error('No running animated rig');
+    posePins.prepareAnimationFrame?.();
     mixer.setTime(time);
+    posePins.captureSourceAnimation?.();
     posePins.update();
     return window.__rigyDiagnostics();
   };
@@ -514,7 +520,9 @@ renderer.setAnimationLoop((time,frame)=>{
     updateXR(dt,frame);
   } else {updateDesktop(dt);controls.update();}
   physics?.update(dt);
+  posePins?.prepareAnimationFrame?.();
   if(mixer && !animationPaused) mixer.update(dt*Math.max(0.01,Number(animationSpeedEl.value)||1));
+  posePins?.captureSourceAnimation?.();
   if(posePins) posePins.update(); // CRITICAL: after mixer; animation cannot overwrite pinned pose
   renderer.render(scene,camera);
 });

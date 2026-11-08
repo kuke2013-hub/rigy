@@ -29,6 +29,9 @@ jobs:
           node --check index-app.js
           node --check rigy/animated/model-bundle.js
           node --check rigy/animated/animation-pins.js
+          node --check rigy/animated/pelvis-pose-engine.js
+          node --check rigy/animated/pelvis-pose-math.mjs
+          node --test tests/pelvis-pose-math.test.mjs
           node --check rigy/controls/physics-grab.js
           node --check rigy/controls/grip-scale.mjs
           node --test tests/two-grip-scale.test.mjs
@@ -53,6 +56,11 @@ jobs:
         run: |
           npm install --no-save playwright@1.65.0
           npx playwright install --with-deps chromium
+      - name: Pelvis-centred pose, fixed 4 endpoints and reduced animation
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-pelvis-v141.log 2>&1 &
+          sleep 3
+          node tests/pelvis-pose-browser.test.mjs
       - name: Test all 12 grab points via trigger and desktop selection
         run: |
           python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-grab-points.log 2>&1 &

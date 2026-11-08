@@ -34,11 +34,12 @@ input[type=checkbox]{accent-color:#8bdac5}
   <div id="status" role="status" aria-live="polite">Loading character and skeleton…</div>
   <div class="settings">
     <label>Animation speed <input id="animationSpeed" type="range" min="0.15" max="2" step="0.05" value="1" aria-label="Animation speed"></label>
+    <label>Idle movement <input id="animationInfluence" type="range" min="0" max="20" step="1" value="15" aria-label="Percentage of original animation movement"></label>
     <label><span>Nearby edit points</span><input id="showHandles" type="checkbox" checked></label>
     <label>Load another FBX / GLB <input id="assetFile" type="file" accept=".fbx,.glb,.gltf,model/gltf-binary" aria-label="Load rigged model"></label>
   </div>
   <p class="hint"><strong>Quest:</strong> Move either controller <strong>within 30 cm</strong> of a joint to reveal its edit point. Hold the <strong>trigger</strong> and physically drag the <span style="color:#76e1d1">cyan wrist/ankle</span> or <span style="color:#f6b874">orange elbow/knee</span> point in 3D. Release the trigger to keep the pose. <span style="color:#b7a3f5">violet head/neck/torso</span> or <span style="color:#c8eaa0">green hips</span> handles. <strong>Both feet stay planted</strong> as the animation and rest of the body adjust. <strong>Side grips</strong> still move/rotate the entire character; both grips still scale it.<br><strong>Desktop:</strong> hover to reveal a point, then click and drag it; drag empty space to orbit, scroll to zoom.<br><span class="mini">Experimental, not medically or Quest validated · original Zelda v13 controller preserved.</span></p>
 </section>
-<div id="footer">RIGY 1.3.9 · ALL GRAB POINTS · QUEST MR</div>
-<script type="module" src="./index-app.js?v=rigy-1.3.9"></script>
+<div id="footer">RIGY 1.4.1 · PELVIS-CENTRED POSE ENGINE · QUEST MR</div>
+<script type="module" src="./index-app.js?v=rigy-1.4.1"></script>
 </body></html>
