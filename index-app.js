@@ -4,7 +4,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './rigy/controls/physics-grab.js?v=rigy-1.3.5';
-import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-1.3.8';
+import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-1.3.9';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
@@ -268,7 +268,7 @@ function resetView(){
   if(!renderer.xr.isPresenting){camera.position.set(0,1.65,2.65);controls.target.set(0,.75,-1.85);controls.update();}
   posePins?.reset();
   physics?.reset();
-  setStatus('Rigy 1.3.8 reset. Side grips grab the character; both grips resize linearly from 10% to 350%.');
+  setStatus('Rigy 1.3.9 reset. Side grips grab the character; both grips resize linearly from 10% to 350%.');
 }
 $('reset').addEventListener('click',resetView);
 
@@ -474,6 +474,34 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
    const before=posePins.shoulderDiagnostics()[limb.id];
    posePins.update();
    return {before,after:posePins.shoulderDiagnostics()[limb.id]};
+  };
+
+  // Tests Quest-style trigger start, controller motion, release, and
+  // concrete marker movement. This DOES NOT bypass the handle selection.
+  window.__rigyTestActualGrip=(id,offset)=>{
+    if(!posePins||!posePins.handles.has(id))throw new Error('Missing handle '+id);
+    if(!Array.isArray(offset)||offset.length!==3||offset.some(v=>!Number.isFinite(v)))
+      throw new Error('Invalid controller motion');
+    posePins.reset();mixer.setTime(1.0);posePins.update();
+    const marker=posePins.handles.get(id),before=marker.getWorldPosition(new THREE.Vector3());
+    const fake=new THREE.Group();fake.position.copy(before);
+    scene.add(fake);fake.updateMatrixWorld(true,false);
+    posePins.onControllerStart(fake);
+    const selected=posePins.active?.limb?.id||null;
+    fake.position.add(new THREE.Vector3(...offset));fake.updateMatrixWorld(true,false);
+    posePins.update();avatar.updateMatrixWorld(true);
+    const after=marker.getWorldPosition(new THREE.Vector3());
+    const pinned=posePins.pins.has(id);
+    posePins.release(fake);scene.remove(fake);
+    return {id,selected,pinned,moved:before.distanceTo(after),
+      before:before.toArray(),after:after.toArray(),kind:marker.userData.poseHandle.kind};
+  };
+  window.__rigyTestHandleScreen=id=>{
+    if(!posePins||!posePins.handles.has(id))throw new Error('Unknown marker '+id);
+    avatar.updateMatrixWorld(true);camera.updateWorldMatrix(true);
+    const rect=renderer.domElement.getBoundingClientRect();
+    const p=posePins.handles.get(id).getWorldPosition(new THREE.Vector3()).project(camera);
+    return {x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2,z:p.z};
   };
   window.__rigyTestReset=()=>posePins?.reset();
 }

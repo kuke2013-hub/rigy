@@ -675,7 +675,7 @@ export class AnimatedPosePins {
   // A pinned arm must no longer inherit its animation-track rotations: keep
   // clavicle, humerus and elbow local pose relative to the animated chest.
   this.armPoseLocks=new Map();
-  this.armSafetyVersion='RIGY-V0138';
+  this.armSafetyVersion='RIGY-V0139';
   this.pointerScreen=null;this.hovered=null;
   this.limbs=makeMixamoMaps(avatar,medicalProfiles);
   this.shoulderBones=[...new Set(this.limbs.filter(l=>l.kindName==='elbow').map(l=>l.clavicle))];
@@ -846,6 +846,27 @@ export class AnimatedPosePins {
   }
   return closest;
  }
+ /** Mouse picking uses the same 2D metric for hover AND click.
+  * Previously an orange elbow or knee could highlight on hover but a
+  * different joint was selected by the click-ray metric.
+  */
+ pickScreenPoint(clientX,clientY){
+  if(!this.visible||!this.enabled)return null;
+  const rect=this.renderer.domElement.getBoundingClientRect();
+  if(!rect.width||!rect.height)return null;
+  this.avatar.updateMatrixWorld(true);
+  this.camera.updateWorldMatrix(true,false);
+  let winner=null,pixels=DESKTOP_HOVER_PIXELS;
+  for(const marker of this.handles.values()){
+   const p=worldPos(marker).project(this.camera);
+   if(p.z<-1||p.z>1)continue;
+   const x=rect.left+(p.x+1)*rect.width/2;
+   const y=rect.top+(1-p.y)*rect.height/2;
+   const distance=Math.hypot(x-clientX,y-clientY);
+   if(distance<pixels){pixels=distance;winner=marker.userData.poseHandle;}
+  }
+  return winner;
+ }
  pickRay(origin,direction){
   let best=null,bestDistance=Infinity;
   for(const marker of this.handles.values()){
@@ -871,23 +892,8 @@ export class AnimatedPosePins {
   const controllerPositions=inXR?this.controllers.map(controller=>{
    controller.updateWorldMatrix(true,false);return worldPos(controller);
   }):[];
-  const rect=!inXR&&this.pointerScreen?this.renderer.domElement.getBoundingClientRect():null;
   const cursor=this.pointerScreen;
-  let hovered=null,bestPixel=DESKTOP_HOVER_PIXELS;
-  // Desktop does not permanently draw grab spheres either: only the point
-  // directly under the cursor (or the dragged point) is highlighted.
-  if(rect&&rect.width&&rect.height){
-   this.camera.updateWorldMatrix(true,false);
-   for(const marker of this.handles.values()){
-    const ndc=worldPos(marker).project(this.camera);
-    if(ndc.z<-1||ndc.z>1)continue;
-    const x=rect.left+(ndc.x+1)*rect.width/2;
-    const y=rect.top+(1-ndc.y)*rect.height/2;
-    const distance=Math.hypot(x-cursor.x,y-cursor.y);
-    if(distance<bestPixel){bestPixel=distance;hovered=marker;}
-   }
-  }
-  this.hovered=hovered?.userData.poseHandle||null;
+  this.hovered=!inXR&&cursor?this.pickScreenPoint(cursor.x,cursor.y):null;
   for(const marker of this.handles.values()){
    const handle=marker.userData.poseHandle;
    const close=inXR&&controllerPositions.some(p=>p.distanceTo(worldPos(marker))<=HANDLE_NEAR_METRES);
@@ -918,10 +924,8 @@ export class AnimatedPosePins {
  release(controller){if(this.active?.controller===controller)this.active=null;}
  onPointerDown(e){
   if(!this.enabled||this.renderer.xr.isPresenting||e.button!==0)return;
-  const r=this.renderer.domElement.getBoundingClientRect();
-  const ndc=new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
-  const ray=new THREE.Raycaster();ray.setFromCamera(ndc,this.camera);
-  const hit=this.pickRay(ray.ray.origin,ray.ray.direction);
+  // The point highlighted during hover MUST be the click target.
+  const hit=this.pickScreenPoint(e.clientX,e.clientY);
   if(!hit)return;
   this.begin(hit,null,{x:e.clientX,y:e.clientY});
   this.controls.enabled=false;e.preventDefault();e.stopPropagation();

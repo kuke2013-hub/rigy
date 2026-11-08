@@ -53,6 +53,11 @@ jobs:
         run: |
           npm install --no-save playwright@1.65.0
           npx playwright install --with-deps chromium
+      - name: Test all 12 grab points via trigger and desktop selection
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-grab-points.log 2>&1 &
+          sleep 3
+          node tests/all-grab-points-browser.test.mjs
       - name: Test pelvis edits preserve 4 endpoint anchors with small animated offsets
         run: |
           python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-pelvis.log 2>&1 &
