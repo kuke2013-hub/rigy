@@ -20,6 +20,7 @@ try{
  const pelvis=await page.evaluate(()=>window.__rigyTestControllerDrag('pelvis',[0.040,0.020,0.015]));
  const after=await page.evaluate(()=>window.__rigyDiagnostics());
  console.log('PELVIS ANCHOR TEST:',JSON.stringify({pelvis,mode:after.bodyAnchorMode,anchors:after.endpointAnchors}));
+ console.log('WRIST IK TRACE:',JSON.stringify(after.armSolveTrace));
  assert.equal(after.bodyAnchorMode,true,'pelvis editing must switch wrists to room-fixed anchor frame');
  assert(pelvis.moved>0.01,'pelvis must move physically');
  for(const id of ['left-wrist','right-wrist','left-ankle','right-ankle']){
