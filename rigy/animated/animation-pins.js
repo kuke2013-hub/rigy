@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {projectShoulderDirection,SHOULDER_ENVELOPE_V06} from '../../anatomy/shoulder-envelope.mjs';
 
 /**
  * Rigy 0.5 grounded animated-pose overlay.
@@ -8,8 +9,8 @@ import * as THREE from 'three';
  * adjust to reach them. The source clip itself is never edited.
  *
  * Per-bone hinge axes are inferred from first animated pose and body anterior,
- * NOT medically validated anatomical calibration. Shoulder clamps are
- * conservative *relative to current animation*, not true 3-D joint envelopes.
+ * NOT medically validated anatomical calibration. Shoulder edits are bounded by a conservative torso-relative angular sector.
+ * These are provisional rig-specific constraints, not full 3D clinical envelopes.
  */
 const V = () => new THREE.Vector3();
 const Q = () => new THREE.Quaternion();
@@ -71,12 +72,80 @@ function makeMixamoMaps(avatar,profiles) {
  for(const side of ['Left','Right']) {
   const upperArm=pickBone(avatar,`${side}Arm`), forearm=pickBone(avatar,`${side}ForeArm`),hand=pickBone(avatar,`${side}Hand`);
   const thigh=pickBone(avatar,`${side}UpLeg`),shin=pickBone(avatar,`${side}Leg`),foot=pickBone(avatar,`${side}Foot`);
-  limbs.push({id:`${side.toLowerCase()}-wrist`,kind:'effector',label:`${side} wrist · lift arm`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:100});
-  limbs.push({id:`${side.toLowerCase()}-elbow`,kind:'bend',label:`${side} elbow · bend`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:100});
+  limbs.push({id:`${side.toLowerCase()}-wrist`,kind:'effector',label:`${side} wrist · lift arm`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:SHOULDER_ENVELOPE_V06.addedSwingDeg});
+  limbs.push({id:`${side.toLowerCase()}-elbow`,kind:'bend',label:`${side} elbow · bend`,reference:avatar.parent||avatar,upper:upperArm,hinge:forearm,effector:hand,lowerEnd:hand,kindName:'elbow',maxBend:elbowMax,maxSwing:SHOULDER_ENVELOPE_V06.addedSwingDeg});
   limbs.push({id:`${side.toLowerCase()}-ankle`,kind:'effector',label:`${side} ankle · lift foot`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
   limbs.push({id:`${side.toLowerCase()}-knee`,kind:'bend',label:`${side} knee · bend`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
  }
+ const shoulderContext={hips,spine,leftArm:pickBone(avatar,'LeftArm'),rightArm:pickBone(avatar,'RightArm')};
+ for(const l of limbs.filter(l=>l.kindName==='elbow')){
+  l.side=l.id.startsWith('left-')?'left':'right';
+  l.shoulderContext=shoulderContext;
+  // Mixamo humeral longitudinal axis measured from child-bone origin, not
+  // guessed as arbitrary bone.euler.x or world XYZ.
+  l.shoulderAxisLocal=l.hinge.position.clone().normalize();
+  if(l.shoulderAxisLocal.lengthSq()<EPS)throw new Error(`Missing ${l.side} upper-arm axis`);
+ }
  return limbs;
+}
+
+/** Torso reference from ACTUAL shoulder locations and hip/chest geometry.
+ * The arm's own rotation does not displace its shoulder joint origin.
+ * +X anatomical left, +Y up chest, +Z anterior by right-hand rule.
+ */
+function torsoBasis(context){
+ const up=worldPos(context.spine).sub(worldPos(context.hips)).normalize();
+ const left=worldPos(context.leftArm).sub(worldPos(context.rightArm));
+ left.addScaledVector(up,-left.dot(up)).normalize();
+ const forward=left.clone().cross(up).normalize();
+ if(up.lengthSq()<EPS||left.lengthSq()<EPS||forward.lengthSq()<EPS)
+  throw new Error('Cannot calibrate shoulder torso basis');
+ // Orthogonalize to guard against animated shear and numerical drift.
+ up.crossVectors(forward,left).normalize();
+ return {left,up,forward};
+}
+function shoulderState(limb){
+ const frame=torsoBasis(limb.shoulderContext);
+ const direction=worldPos(limb.hinge).sub(worldPos(limb.upper)).normalize();
+ const local={x:direction.dot(frame.left),y:direction.dot(frame.up),z:direction.dot(frame.forward)};
+ const evaluated=projectShoulderDirection(local,limb.side);
+ return {frame,direction,evaluated};
+}
+/**
+ * Two-stage projection for a manually edited Mixamo shoulder:
+ * 1. Cap added humeral AXIAL TWIST relative to the animated quaternion.
+ * 2. Enforce an asymmetric shoulder-to-elbow world DIRECTION measured against
+ *    the moving torso, not a 100-degree delta on top of an animated pose.
+ * This is deliberately a conservative single-humerus approximation. No
+ * independent scapula or clavicle exists in this specific FBX hierarchy.
+ */
+function constrainUpperArm(limb,animatedQ){
+ if(!limb.shoulderContext||!animatedQ)return;
+ const bone=limb.upper,axis=limb.shoulderAxisLocal;
+ const rel=animatedQ.clone().invert().multiply(bone.quaternion.clone()).normalize();
+ const proj=rel.x*axis.x+rel.y*axis.y+rel.z*axis.z;
+ const twist=new THREE.Quaternion(axis.x*proj,axis.y*proj,axis.z*proj,rel.w).normalize();
+ if(Number.isFinite(twist.w)){
+  const swing=rel.clone().multiply(twist.clone().invert());
+  let angle=2*Math.atan2(proj,rel.w);
+  if(angle>Math.PI)angle-=TWO_PI;
+  if(angle< -Math.PI)angle+=TWO_PI;
+  const bounded=clamp(angle,-SHOULDER_ENVELOPE_V06.addedAxialTwistDeg*RAD,
+    SHOULDER_ENVELOPE_V06.addedAxialTwistDeg*RAD);
+  const limitedTwist=new THREE.Quaternion().setFromAxisAngle(axis,bounded);
+  bone.quaternion.copy(animatedQ).multiply(swing).multiply(limitedTwist).normalize();
+  bone.updateWorldMatrix(true,true);
+ }
+ const state=shoulderState(limb);
+ if(!state.evaluated.clamped)return;
+ const limited=state.evaluated;
+ const safeDirection=state.frame.left.clone().multiplyScalar(limited.x)
+  .addScaledVector(state.frame.up,limited.y).addScaledVector(state.frame.forward,limited.z).normalize();
+ const correction=new THREE.Quaternion().setFromUnitVectors(state.direction,safeDirection);
+ const desiredWorld=correction.multiply(worldQ(bone));
+ bone.parent.updateWorldMatrix(true,false);
+ bone.quaternion.copy(worldQ(bone.parent).invert().multiply(desiredWorld)).normalize();
+ bone.updateWorldMatrix(true,true);
 }
 
 function hingeFlexAngle(limb, axisWorld){
@@ -139,6 +208,7 @@ function steerUpper(limb,target,animatedQ){
   bone.quaternion.copy(limited.normalize());
  } else bone.quaternion.copy(localCandidate.normalize());
  bone.updateMatrixWorld(true);
+ constrainUpperArm(limb,animatedQ);
 }
 
 function solveEffector(limb,target,animatedUpper,lockHinge=false){
@@ -173,6 +243,7 @@ function steerHingePosition(limb,goal,animatedUpper){
  limb.upper.quaternion.copy(swing>maximum&&swing>EPS
   ?animatedUpper.clone().slerp(local,maximum/swing):local);
  limb.upper.updateMatrixWorld(true);
+ constrainUpperArm(limb,animatedUpper);
 }
 
 function aimHingeChild(limb,tipGoal){
@@ -451,6 +522,17 @@ export class AnimatedPosePins {
   const move=target.clone().sub(original);
   if(move.length()>handle.maxMove)move.setLength(handle.maxMove);
   this.pins.set(handle.id,{type:'body',originalLocal:reference.clone(),targetLocal:handle.reference.worldToLocal(original.add(move))});
+ }
+ shoulderDiagnostics(){
+  this.avatar.updateWorldMatrix(true,true);
+  const result={};
+  for(const l of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='elbow')){
+   const measured=shoulderState(l).evaluated;
+   result[l.id]={elevationDeg:measured.requestedDeg??measured.elevationDeg,
+    limitDeg:measured.maximumDeg,excessDeg:Math.max(0,(measured.requestedDeg??measured.elevationDeg)-measured.maximumDeg),
+    withinEnvelope:!measured.clamped};
+  }
+  return result;
  }
  footErrors(){
   this.avatar.updateMatrixWorld(true);

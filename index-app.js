@@ -4,7 +4,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './VR_OBJECTS_TEMPLATE/physics-grab.js?v=template-1';
-import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-0.5.4';
+import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-0.6';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
@@ -315,6 +315,7 @@ window.__rigyDiagnostics = () => ({
   animationTime: mixer?.time || 0,
   skeletonBones: avatar ? (() => {let n=0;avatar.traverse(o=>{if(o.isBone)n++;});return n;})() : 0,
   handleCount: posePins?.handles?.size || 0,
+  shoulderDiagnostics: posePins?.shoulderDiagnostics?.()||null,
   footErrors: posePins?.footErrors?.()||null,
   footReach: posePins?.footReachDiagnostics?.()||null,
   plantedFeet: posePins?.footAnchors?.size||0,

@@ -81,6 +81,26 @@ try{
       assert(Number.isFinite(error)&&error<.028,`${id} must not unplant ${foot}: ${error}`);
     }
   }
+  // v0.6: even impossible controller demands must not rotate the shoulder
+  // behind the body or through other anatomical sectors.
+  for(const side of ['left','right']){
+    const sign=side==='left'?1:-1, id=`${side}-wrist`;
+    for(const [label,offset] of [
+      ['posterior',[0,.35,-1.3]],
+      ['anterior',[0,1.2,1.3]],
+      ['lateral',[sign*1.1,1.1,0]],
+      ['medial',[-sign*1.3,.7,.2]]
+    ]){
+      await page.evaluate(()=>window.__rigyTestReset());
+      await page.waitForTimeout(100);
+      await page.evaluate(({id,offset})=>window.__rigyTestControllerDrag(id,offset),{id,offset});
+      const diag=await page.evaluate(()=>window.__rigyDiagnostics());
+      const shoulder=diag.shoulderDiagnostics?.[id];
+      console.log('Shoulder limit',id,label,JSON.stringify(shoulder));
+      assert(shoulder,`missing ${id} shoulder diagnostics`);
+      assert(shoulder.excessDeg<.6,`${id} ${label}: shoulder violated by ${shoulder.excessDeg.toFixed(1)} degrees`);
+    }
+  }
   const continuing=await page.evaluate(()=>window.__rigyDiagnostics().animationTime);
   assert(continuing>after.animationTime,'Animation should remain active during edit tests');
   console.log('PASS: animation and all 12 handles, both feet anchored, joint edits remain bounded and markers hide until nearby');

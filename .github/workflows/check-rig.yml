@@ -28,6 +28,8 @@ jobs:
           node --check rigy/animated/model-bundle.js
           node --check rigy/animated/animation-pins.js
           node --test tests/model-loader.test.mjs
+          node --test tests/shoulder-envelope.test.mjs
+          node --check anatomy/shoulder-envelope.mjs
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 15
