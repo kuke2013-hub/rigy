@@ -73,6 +73,8 @@ try{
     assert(moved.goal.every(Number.isFinite)&&moved.after.every(Number.isFinite),`${id}: finite limb pose required`);
     assert(moved.moved>.008,`${id}: controller translation must physically move edited point`);
     assert(moved.deviation<.27,`${id}: pose should not collapse away from drag goal`);
+    const reach=await page.evaluate(()=>window.__rigyDiagnostics().footReach);
+    console.log('Support-leg reach',id,JSON.stringify(reach));
     const grounded=await page.evaluate(()=>window.__rigyDiagnostics().footErrors);
     for(const [foot,error] of Object.entries(grounded||{})){
       console.log('Foot contact',id,foot,error);

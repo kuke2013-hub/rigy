@@ -466,6 +466,41 @@ export class AnimatedPosePins {
   if(delta.length()>HIP_MAX_ROOT_SHIFT)delta.setLength(HIP_MAX_ROOT_SHIFT);
   shiftBoneWorld(this.hips,delta);
  }
+ footReachDiagnostics(){
+  this.avatar.updateMatrixWorld(true);
+  const result={};
+  for(const l of this.limbs.filter(x=>x.kind==='effector'&&x.kindName==='knee')){
+   const target=this.anchorRoot.localToWorld(this.footAnchors.get(l.id).targetLocal.clone());
+   const start=worldPos(l.upper),joint=worldPos(l.hinge),tip=worldPos(l.effector);
+   const first=start.distanceTo(joint),second=joint.distanceTo(tip);
+   result[l.id]={distance:start.distanceTo(target),maxReach:first+second,
+    minReach:Math.sqrt(Math.max(0,first*first+second*second+2*first*second*Math.cos(l.maxBend*RAD)))};
+  }
+  return result;
+ }
+ keepPelvisWithinLegReach(){
+  // Rooted-body contact solver: don't ask a finite-length thigh+shin to reach
+  // a foot if the posed pelvis would put the ankle beyond its mechanical arc.
+  for(let pass=0;pass<6;pass++){
+   const deltas=[];
+   for(const l of this.limbs.filter(x=>x.kind==='effector'&&x.kindName==='knee')){
+    const anchor=this.footAnchors.get(l.id);
+    const foot=this.anchorRoot.localToWorld(anchor.targetLocal.clone());
+    const thigh=worldPos(l.upper),knee=worldPos(l.hinge),currentFoot=worldPos(l.effector);
+    const first=thigh.distanceTo(knee),second=knee.distanceTo(currentFoot);
+    const ray=foot.clone().sub(thigh),d=ray.length();if(d<1e-7)continue;
+    const max=Math.max(.001,first+second-.006);
+    const min=Math.sqrt(Math.max(0,first*first+second*second+2*first*second*Math.cos(l.maxBend*RAD)))+.006;
+    if(d>max)deltas.push(ray.multiplyScalar((d-max)/d));
+    else if(d<min)deltas.push(ray.multiplyScalar(-(min-d)/d));
+   }
+   if(!deltas.length)break;
+   const shift=deltas.reduce((sum,v)=>sum.add(v),V()).divideScalar(deltas.length).multiplyScalar(.82);
+   if(shift.length()>0.08)shift.setLength(0.08);
+   if(shift.length()<.0001)break;
+   this.moveHips(shift);
+  }
+ }
  update(){
   if(!this.enabled)return;
   const s=this.active;
@@ -523,6 +558,7 @@ export class AnimatedPosePins {
     if(delta.length()>0.24)delta.setLength(0.24);
     this.moveHips(delta);
    }
+   this.keepPelvisWithinLegReach();
    // Torso, neck and head offsets apply on top of the idle animation and are
    // bounded per vertebral group by conservative rig-specific angular caps.
    for(const h of this.bodyHandles.filter(h=>h.kind==='body')){
