@@ -608,66 +608,55 @@ function solveEffector(limb,target,animatedUpper,lockHinge=false){
  * Here the controller chooses the intersection-circle azimuth, while the
  * hand or foot stays anchored and joint restrictions remain authoritative.
  */
-function solveWithMiddlePole(limb,endpoint,requestedPole,animatedUpper,attempt=0){
- const root=worldPos(limb.upper),middle=worldPos(limb.hinge);
- const endNow=worldPos(limb.effector);
- const a=root.distanceTo(middle),b=middle.distanceTo(endNow);
- const initialUpper=limb.upper.quaternion.clone(),initialHinge=limb.hinge.quaternion.clone();
- const projected=projectedMiddleJoint(root,endpoint,a,b,requestedPole,middle);
- if(!projected){solveEffector(limb,endpoint,animatedUpper);return;}
- const wanted=V().set(projected.x,projected.y,projected.z);
- const joints=[limb.upper,limb.hinge];
- const snapshot=()=>joints.map(b=>b.quaternion.clone());
- const restore=pose=>{joints.forEach((b,i)=>b.quaternion.copy(pose[i]));limb.upper.updateMatrixWorld(true);};
- const endpointError=()=>worldPos(limb.effector).distanceTo(endpoint);
- const poleError=()=>worldPos(limb.hinge).distanceTo(wanted);
- const direction=()=>worldPos(limb.hinge).sub(worldPos(limb.upper)).normalize();
- const constrain=()=>limb.kindName==='knee'?
-   constrainUpperLeg(limb):constrainUpperArm(limb,animatedUpper);
- let best=snapshot(),bestError=4*endpointError()+poleError();
- const consider=()=>{
-   if(limb.kindName==='elbow'&&shoulderState(limb).evaluated.clamped)return;
-   if(limb.kindName==='knee'&&hipState(limb).evaluated.clamped)return;
-   const score=4*endpointError()+poleError();
-   if(score<bestError){bestError=score;best=snapshot();}
- };
- for(let iteration=0;iteration<8;iteration++){
-   useWorldRotation(limb.upper,Q().setFromUnitVectors(
-     direction(),wanted.clone().sub(worldPos(limb.upper)).normalize()));
-   constrain();
-   // Upper-bone roll aligns the existing 1-DOF hinge with this NEW spatial
-   // bending plane. There is no lateral rotation at the hinge itself.
-   const elbow=worldPos(limb.hinge);
-   let roll=signedAxisAngle(worldPos(limb.effector).sub(elbow),
-     endpoint.clone().sub(elbow),direction());
-   const cap=(limb.kindName==='knee'?35:25)*RAD;
-   roll=clamp(roll,-cap,cap);
-   if(Math.abs(roll)>1e-6){
-     useWorldRotation(limb.upper,Q().setFromAxisAngle(direction(),roll));
-     constrain();
-   }
-   const pivot=worldPos(limb.hinge);
-   const hingeAxis=limb.hingeAxisLocal.clone().applyQuaternion(worldQ(limb.hinge)).normalize();
-   const bend=signedAxisAngle(worldPos(limb.effector).sub(pivot),
-     endpoint.clone().sub(pivot),hingeAxis);
-   turnHinge(limb,clamp(bend,-.5,.5));
-   if(limb.kindName==='elbow')hardArmJointProjection(limb,animatedUpper);
-   consider();
-   if(endpointError()<.008&&poleError()<.015)break;
+function solveWithMiddlePole(limb,endpoint,requestedPole,animatedUpper){
+ // The hand/foot is a HARD anchor. First bring the distal joint close to
+ // that anchor with the existing anatomy-bounded IK; do not move its target.
+ const arm=limb.kindName==='elbow';
+ const error=()=>worldPos(limb.effector).distanceTo(endpoint);
+ if(error()>.012){
+  if(arm)solveAnchoredArm(limb,endpoint,animatedUpper);
+  else solveEffector(limb,endpoint,animatedUpper);
+ }
+ const root=worldPos(limb.upper),mid=worldPos(limb.hinge);
+ const end=worldPos(limb.effector);
+ const first=root.distanceTo(mid),second=mid.distanceTo(end);
+ if(first<EPS||second<EPS)return;
+ const geometric=projectedMiddleJoint(root,end,first,second,requestedPole,mid);
+ if(!geometric)return;
+ const axis=end.clone().sub(root).normalize();
+ const goal=V().set(geometric.x,geometric.y,geometric.z);
+ // Rotating the WHOLE upper-limb chain about root-to-end changes ONLY
+ // the knee/elbow bending plane. The endpoint lies on that axis and
+ // therefore does not move at all (apart from numerical precision).
+ const desiredAngle=signedAxisAngle(mid.clone().sub(root),
+   goal.clone().sub(root),axis);
+ if(Math.abs(desiredAngle)<1e-6)return;
+ const bones=arm?[limb.clavicle,limb.upper,limb.hinge]:[limb.upper,limb.hinge];
+ const capture=()=>bones.map(b=>b.quaternion.clone());
+ const restore=poses=>{bones.forEach((b,k)=>b.quaternion.copy(poses[k]));
+   bones[0].updateMatrixWorld(true);};
+ const initial=capture();
+ const endTolerance=Math.max(.025,error()+.006);
+ let best=initial,bestDistance=mid.distanceTo(goal);
+ // Search the permitted portion of the bending circle. Never trade
+ // a stationary wrist/ankle for an impossible sideways pole position.
+ for(const f of [1,.85,.7,.55,.4,.25,.13]){
+  restore(initial);
+  const amount=clamp(desiredAngle*f,-75*RAD,75*RAD);
+  useWorldRotation(limb.upper,Q().setFromAxisAngle(axis,amount));
+  if(arm)hardArmJointProjection(limb,animatedUpper);
+  else constrainUpperLeg(limb);
+  const within=arm?
+   absoluteArmValid(limb)&&!shoulderState(limb).evaluated.clamped&&
+   torsoIntrusion(limb)<=ARM_TORSO_LIMIT:
+   !hipState(limb).evaluated.clamped&&thighIntrusion(limb)<=.006;
+  if(!within||error()>endTolerance)continue;
+  const deviation=worldPos(limb.hinge).distanceTo(goal);
+  if(deviation+1e-6<bestDistance){
+   bestDistance=deviation;best=capture();
+  }
  }
  restore(best);
- // A hand anchor is an absolute constraint. If the user sweeps the elbow
- // beyond the feasible shoulder/hinge sector, progressively shorten the
- // requested pole displacement rather than let the wrist detach in space.
- // This fallback occurs ONLY when the endpoint solver exceeds tolerance;
- // normal lateral knee and elbow motion pays no extra calculation cost.
- if(limb.kindName==='elbow'&&endpointError()>.034&&attempt<3){
-  limb.upper.quaternion.copy(initialUpper);
-  limb.hinge.quaternion.copy(initialHinge);
-  limb.upper.updateMatrixWorld(true);
-  const nearer=middle.clone().lerp(requestedPole,.5);
-  return solveWithMiddlePole(limb,endpoint,nearer,animatedUpper,attempt+1);
- }
 }
 
 /** Move the hinge point physically by steering its parent (shoulder / hip).
