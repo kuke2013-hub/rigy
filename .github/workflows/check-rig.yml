@@ -12,6 +12,7 @@ on:
       - rigy/controls/**
       - tests/**
       - models/standing-idle/manifest.json
+      - models/standing-idle/Image_0.jpg
 permissions:
   contents: read
 jobs:
@@ -57,7 +58,7 @@ jobs:
         run: |
           npm install --no-save playwright@1.65.0
           npx playwright install --with-deps chromium
-      - name: Verify reference charcoal-silver material and original rig intact
+      - name: Verify only exact JPEG atlas with unlit geometry and no shadows
         run: |
           python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-finish.log 2>&1 &
           sleep 3

@@ -115,44 +115,41 @@ function applyFeaturedAtlas(root,texture){
 }
 
 
-/** RIGY-V0157: Featured model's glossy charcoal/silver surface.
- * User image is a render/reference, not a UV-unwrapped texture atlas.
- * Keep all original textures and materials intact in userData.
+/** RIGY-V0158: the original user-supplied Image_0 JPEG is the ONLY rendered
+ * surface on the featured FBX. No ambient shading, metallic shine, shadow,
+ * vertex colours, wireframe, added lines, lighting or ACES tone mapping.
+ * Original UVs, skinning, pose controls and source materials are preserved.
  */
-function applyReferenceFinish(root){
- let applied=0,untouched=0;
- const tone=material=>{
-  if(!material?.isMaterial)return material;
-  if(!material.isMeshPhongMaterial&&!material.isMeshStandardMaterial&&
-      !material.isMeshPhysicalMaterial){untouched++;return material;}
-  const copy=material.clone();
-  copy.name=(material.name||'original')+'_charcoalSilver';
-  if(copy.isMeshPhongMaterial){
-   copy.color.set(0x303338);
-   copy.specular.set(0xe2e3e4);
-   copy.shininess=88;
-  }else{
-   copy.color.set(0x45484b);
-   copy.metalness=.26;
-   copy.roughness=.27;
-   if(copy.isMeshPhysicalMaterial){copy.clearcoat=.42;copy.clearcoatRoughness=.20;}
-  }
-  copy.needsUpdate=true;
-  applied++;
-  return copy;
- };
+const FEATURED_JPEG_URL='./models/standing-idle/Image_0.jpg?v=rigy-1.5.8';
+function applyJpegAtlasOnly(root,texture){
+ const image=texture?.image;
+ if(image?.width!==2048||image?.height!==2048)
+   throw new Error('Original 2048 × 2048 JPEG atlas is missing or damaged');
+ texture.colorSpace=THREE.SRGBColorSpace;
+ texture.flipY=true; // Match FBXLoader's TextureLoader convention.
+ texture.needsUpdate=true;
+ let applied=0,uvMeshes=0,missingUV=0;
  root.traverse(part=>{
-  if(!part.isMesh||!part.material)return;
-  const original=part.material;
-  const revised=Array.isArray(original)?original.map(tone):tone(original);
-  if(revised!==original){
+   if(part.isLine||part.isPoints){part.visible=false;return;}
+   if(!part.isMesh)return;
+   const original=part.material;
    part.userData.rigySourceMaterial=original;
-   part.material=revised;
-  }
+   const uv=part.geometry?.getAttribute('uv');
+   if(uv?.count)uvMeshes++;else missingUV++;
+   const basic=()=>new THREE.MeshBasicMaterial({
+     name:'Image_0_JPEG_only',color:0xffffff,map:texture,
+     toneMapped:false,transparent:false,opacity:1,wireframe:false,
+     fog:false,side:THREE.DoubleSide
+   });
+   part.material=Array.isArray(original)?original.map(basic):basic();
+   part.castShadow=false;part.receiveShadow=false;
+   applied++;
  });
+ if(!applied||!uvMeshes)throw new Error('Original FBX has no UV-mapped renderable meshes');
  root.userData.rigyReferenceFinish={
-  name:'Polished charcoal and silver',applied,untouched,
-  reversible:true,sourceTexturesPreserved:true
+   name:'Image_0.jpg',applied,uvMeshes,missingUV,unlit:true,
+   shadows:false,textureWidth:2048,textureHeight:2048,
+   reversible:true,sourceTexturesPreserved:true
  };
  return root.userData.rigyReferenceFinish;
 }
@@ -236,7 +233,8 @@ async function loadFeaturedRig(){
       });
       setStatus('Parsing rig, mesh and all animation tracks…');
       const root=fbxLoader.parse(binary,'./models/standing-idle/');
-      applyReferenceFinish(root);
+      const jpeg=await new THREE.TextureLoader().loadAsync(FEATURED_JPEG_URL);
+    applyJpegAtlasOnly(root,jpeg);
       installObject(root,'Standing W_Briefcase Idle.fbx',root.animations||[]);
     }
   }catch(error){console.error(error);setStatus(`Automatic model import failed: ${error.message}. Select the original FBX locally (and the JPEG texture if needed).`);}
@@ -615,6 +613,24 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
    return posePins.handles.get(id).getWorldPosition(new THREE.Vector3()).toArray();
   };
   window.__rigyReferenceFinish=()=>avatar?.userData.rigyReferenceFinish||null;
+  window.__rigyAtlasMaterialReport=()=>{
+    const report={meshes:0,unlitMeshes:0,atlasMeshes:0,uvMeshes:0,
+      shadowMeshes:0,nonJpegMaterials:0};
+    avatar?.traverse(part=>{
+      if(!part.isMesh)return;
+      report.meshes++;
+      if(part.geometry?.getAttribute('uv')?.count)report.uvMeshes++;
+      const mats=Array.isArray(part.material)?part.material:[part.material];
+      if(mats.length&&mats.every(m=>m.isMeshBasicMaterial&&
+        m.toneMapped===false&&m.wireframe===false&&m.color.getHex()===0xffffff))
+        report.unlitMeshes++;
+      if(mats.length&&mats.every(m=>m.map?.image?.width===2048&&
+        m.map?.image?.height===2048))report.atlasMeshes++;
+      if(mats.some(m=>!m.isMeshBasicMaterial||!m.map))report.nonJpegMaterials++;
+      if(part.castShadow||part.receiveShadow)report.shadowMeshes++;
+    });
+    return report;
+  };
   window.__rigyTestReset=()=>posePins?.reset();
 }
 let previous=0;
