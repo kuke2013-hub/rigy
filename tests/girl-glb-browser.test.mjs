@@ -11,7 +11,7 @@ page.on('requestfailed',r=>console.error('FAILED REQUEST',r.url(),r.failure()?.e
 try{
  await page.goto('http://127.0.0.1:8765/objects/girl-blender/?rigy_test=1',{waitUntil:'domcontentloaded',timeout:90000});
  try{
-  await page.waitForFunction(()=>window.__rigyDiagnostics?.().ready===true,null,{timeout:180000});
+  await page.waitForFunction(()=>window.__rigyDiagnostics?.().ready===true,null,{timeout:90000});
  }catch(e){
   console.log('DEBUG',await page.evaluate(()=>({text:document.querySelector('#status')?.textContent,diag:window.__rigyDiagnostics?.()})));
   throw e;
