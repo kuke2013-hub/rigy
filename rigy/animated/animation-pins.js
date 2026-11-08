@@ -1079,7 +1079,7 @@ export class AnimatedPosePins {
    for(const arm of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
     const wrist=this.pins.get(arm.id);
     const elbow=this.pins.get(arm.id.replace('-wrist','-elbow'));
-    if(!wrist&&!elbow)continue;
+    if(!this.bodyAnchorMode&&!wrist&&!elbow)continue;
     const lock=this.bodyAnchorMode?null:this.armPoseLocks.get(arm.side);
     if(lock){
      arm.clavicle.quaternion.copy(lock.clavicle);
