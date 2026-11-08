@@ -1,0 +1,62 @@
+name: Assemble exact Girl Blender GLB
+on:
+  push:
+    branches: [feature/girl-blender-glb-staging]
+    paths:
+      - 'models/girl-blender/.transfer/**'
+      - '.github/workflows/assemble-girl-glb.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Decode every checksum-verified chunk and restore exact GLB
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, pathlib, struct
+          root=pathlib.Path("models/girl-blender/.transfer")
+          m=json.loads((root/"manifest.json").read_text())
+          assert m["format"]=="rigy-base64-xz-v1"
+          assert len(m["sha1"])==m["chunks"]==56
+          compressed=bytearray()
+          for i,sha in enumerate(m["sha1"]):
+              path=root/("part%02d.b64"%i)
+              encoded=path.read_bytes().strip()
+              got=hashlib.sha1(b"blob "+str(len(encoded)).encode()+b"\0"+encoded).hexdigest()
+              assert got==sha, f"Chunk {i} SHA1 mismatch"
+              part=base64.b64decode(encoded,validate=True)
+              assert len(part)==m["chunk_size"] or (i==m["chunks"]-1 and 0<len(part)<=m["chunk_size"])
+              compressed.extend(part)
+          assert len(compressed)==m["xz_size"], "Compressed size mismatch"
+          assert hashlib.sha256(compressed).hexdigest()==m["xz_sha256"], "Compressed checksum mismatch"
+          glb=lzma.decompress(compressed)
+          assert len(glb)==m["uncompressed_size"], "Uncompressed size mismatch"
+          assert hashlib.sha256(glb).hexdigest()==m["uncompressed_sha256"], "Source GLB checksum mismatch"
+          assert glb[:4]==b"glTF", "Missing glTF magic"
+          version,length=struct.unpack("<II",glb[4:12])
+          assert version==2 and length==len(glb), "Invalid GLB header"
+          out=pathlib.Path(m["destination"])
+          out.parent.mkdir(parents=True,exist_ok=True)
+          out.write_bytes(glb)
+          print(f"Restored exact GLB: {len(glb)} bytes, SHA256 {m['uncompressed_sha256']}")
+          PY
+      - name: Commit reconstructed binary and remove temporary chunks
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f models/girl-blender/.transfer/part*.b64
+          git add models/girl-blender/gilr_blender_small_textured.glb
+          git add -u models/girl-blender/.transfer
+          if git diff --cached --quiet; then
+            echo "Exact source GLB already present"
+          else
+            git commit -m "Restore exact SHA256-verified 73.8MB Girl Blender GLB"
+            git push origin HEAD:feature/girl-blender-glb-staging
+          fi
