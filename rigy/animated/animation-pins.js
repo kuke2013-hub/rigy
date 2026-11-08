@@ -608,10 +608,11 @@ function solveEffector(limb,target,animatedUpper,lockHinge=false){
  * Here the controller chooses the intersection-circle azimuth, while the
  * hand or foot stays anchored and joint restrictions remain authoritative.
  */
-function solveWithMiddlePole(limb,endpoint,requestedPole,animatedUpper){
+function solveWithMiddlePole(limb,endpoint,requestedPole,animatedUpper,attempt=0){
  const root=worldPos(limb.upper),middle=worldPos(limb.hinge);
  const endNow=worldPos(limb.effector);
  const a=root.distanceTo(middle),b=middle.distanceTo(endNow);
+ const initialUpper=limb.upper.quaternion.clone(),initialHinge=limb.hinge.quaternion.clone();
  const projected=projectedMiddleJoint(root,endpoint,a,b,requestedPole,middle);
  if(!projected){solveEffector(limb,endpoint,animatedUpper);return;}
  const wanted=V().set(projected.x,projected.y,projected.z);
@@ -655,6 +656,18 @@ function solveWithMiddlePole(limb,endpoint,requestedPole,animatedUpper){
    if(endpointError()<.008&&poleError()<.015)break;
  }
  restore(best);
+ // A hand anchor is an absolute constraint. If the user sweeps the elbow
+ // beyond the feasible shoulder/hinge sector, progressively shorten the
+ // requested pole displacement rather than let the wrist detach in space.
+ // This fallback occurs ONLY when the endpoint solver exceeds tolerance;
+ // normal lateral knee and elbow motion pays no extra calculation cost.
+ if(limb.kindName==='elbow'&&endpointError()>.034&&attempt<3){
+  limb.upper.quaternion.copy(initialUpper);
+  limb.hinge.quaternion.copy(initialHinge);
+  limb.upper.updateMatrixWorld(true);
+  const nearer=middle.clone().lerp(requestedPole,.5);
+  return solveWithMiddlePole(limb,endpoint,nearer,animatedUpper,attempt+1);
+ }
 }
 
 /** Move the hinge point physically by steering its parent (shoulder / hip).
