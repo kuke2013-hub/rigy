@@ -591,7 +591,9 @@ export class AnimatedPosePins {
     excessDeg:Math.max(0,(measured.requestedDeg??measured.elevationDeg)-measured.maximumDeg),
     withinEnvelope:!measured.clamped,
     goalElevationDeg,
-    girdleDeltaDeg:l.animatedShoulderLocal?l.clavicle.quaternion.angleTo(l.animatedShoulderLocal)/RAD:0
+    girdleDeltaDeg:l.animatedShoulderLocal?l.clavicle.quaternion.angleTo(l.animatedShoulderLocal)/RAD:0,
+    wristGoalErrorMetres:pin?.targetLocal?
+      worldPos(l.effector).distanceTo(this.anchorRoot.localToWorld(pin.targetLocal.clone())):null
    };
   }
   return result;

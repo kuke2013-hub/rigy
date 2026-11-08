@@ -69,6 +69,13 @@ try{
       assert(sh&&sh.withinEnvelope,id+' outside total shoulder-complex envelope');
       assert(sh.goalElevationDeg>150,id+' target not overhead');
       assert(sh.elevationDeg>140,id+' failed to raise above 140 degrees: '+sh.elevationDeg);
+      assert(sh.wristGoalErrorMetres<0.075,id+' wrist did not follow overhead target');
+      // The pose should survive the animated clip at another timestamp.
+      const shifted=await page.evaluate(()=>window.__rigyTestJumpAnimation(6.4));
+      const still=shifted.shoulderDiagnostics?.[id];
+      console.log('ANIMATED OVERHEAD',id,plane,JSON.stringify(still));
+      assert(still?.elevationDeg>130,id+' lost its raised upper-arm pose during animation');
+      assert(still.wristGoalErrorMetres<0.10,id+' wrist drifted during continued animation');
     }
   }
   // v0.4 regression: a stationary controller grab must NEVER collapse the
@@ -86,7 +93,11 @@ try{
     assert(initialDistance<.014,`${id}: stationary pin target must not jump (${initialDistance.toFixed(4)}m)`);
     await page.evaluate(()=>window.__rigyTestReset());
     await page.waitForTimeout(110);
-    const moved=await page.evaluate(id=>window.__rigyTestControllerDrag(id,[0.09,0.04,0.07]),id);
+    // Planted ankle can lift towards the thigh, rather than being forced
+    // through an unreachable sideways/outward position at full knee extension.
+    const translation=id.endsWith('-ankle')?[0,0.10,0]:[0.09,0.04,0.07];
+    const moved=await page.evaluate(({id,translation})=>
+      window.__rigyTestControllerDrag(id,translation),{id,translation});
     console.log('Controller drag',id,JSON.stringify({moved:moved.moved,deviation:moved.deviation}));
     assert(moved.goal.every(Number.isFinite)&&moved.after.every(Number.isFinite),`${id}: finite limb pose required`);
     assert(moved.moved>.008,`${id}: controller translation must physically move edited point`);
