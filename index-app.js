@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createGrabPhysics } from './VR_OBJECTS_TEMPLATE/physics-grab.js?v=template-1';
+import { createGrabPhysics } from './rigy/controls/physics-grab.js?v=rigy-1.3.5';
 import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-1.3.4';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
@@ -268,7 +268,7 @@ function resetView(){
   if(!renderer.xr.isPresenting){camera.position.set(0,1.65,2.65);controls.target.set(0,.75,-1.85);controls.update();}
   posePins?.reset();
   physics?.reset();
-  setStatus('Rigy 0.2 reset. Left X moves object sideways, either Y pulls/pushes. Two-hand resizing is 10% to 350%.');
+  setStatus('Rigy 1.3.5 reset. Side grips grab the character; both grips resize linearly from 10% to 350%.');
 }
 $('reset').addEventListener('click',resetView);
 
@@ -309,6 +309,7 @@ window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camer
 // distinguish "source files uploaded" from an actually running animated rig.
 window.__rigyDiagnostics = () => ({
   ready: !!(avatar && mixer && posePins),
+  wholeCharacterGrip:physics?.getDebugState?.()||null,
   characterLoaded: !!avatar,
   animationClip: clip?.name || null,
   animationDuration: clip?.duration || 0,
