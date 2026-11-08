@@ -4,7 +4,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './VR_OBJECTS_TEMPLATE/physics-grab.js?v=template-1';
-import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-0.2';
+import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-0.4';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
@@ -72,7 +72,7 @@ async function installAnimation(root, clips){
     if(avatar!==root)return;
     posePins=new AnimatedPosePins({avatar:root,renderer,camera,controls,medicalProfiles,onStatus:setStatus});
     posePins.setVisible(showHandlesEl.checked);
-    setStatus(`Playing ${clip.name || 'Idle'} (${clip.duration.toFixed(2)} s). Trigger a cyan wrist/ankle marker to reposition it; orange elbow/knee markers to bend. Release to pin, animation keeps playing.`);
+    setStatus(`Playing ${clip.name || 'Idle'} (${clip.duration.toFixed(2)} s). Bring a controller within 30 cm of a joint to reveal its point; hold trigger and MOVE that point in 3D. Release to pin; animation continues.`);
   }catch(error){console.warn('Rig pin setup failed',error);setStatus(`Animation running, but posing is unavailable: ${error.message}`);}
 }
 $('resetPose').addEventListener('click',()=>{posePins?.reset();setStatus('All limb pins cleared. Original animation continues.');});
@@ -293,7 +293,7 @@ enter.addEventListener('click',async()=>{
     camera.position.set(0,0,0); // Never reuse the desktop orbit offset in XR.
     enter.textContent='PASSTHROUGH ACTIVE';
     physics?.releaseAll();
-    setStatus('Rigy animated posing: side grips = whole character. Trigger a visible cyan wrist/ankle or orange elbow/knee marker to pose while animation continues.');
+    setStatus('Bring either controller close (30 cm) to a joint to reveal its edit point. Hold trigger and move arm, elbow, wrist, knee or ankle. Side grips move the whole character.');
   }catch(error){console.error(error);enter.textContent='RETRY PASSTHROUGH';setStatus(`Could not start AR: ${error.name}: ${error.message}`);}
   finally{enter.disabled=false;}
 });
@@ -315,6 +315,8 @@ window.__rigyDiagnostics = () => ({
   animationTime: mixer?.time || 0,
   skeletonBones: avatar ? (() => {let n=0;avatar.traverse(o=>{if(o.isBone)n++;});return n;})() : 0,
   handleCount: posePins?.handles?.size || 0,
+  visibleHandleCount: posePins?[...posePins.handles.values()].filter(m=>m.visible).length:0,
+  activeJoint: posePins?.active?.limb?.id || null,
   pinnedCount: posePins?.pins?.size || 0,
   status: $('status').textContent,
   vrPresenting: renderer.xr.isPresenting
@@ -333,6 +335,36 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
     posePins.storeTarget(limb,target);
     return {target:target.toArray(),pinCount:posePins.pins.size};
   };
+  // Browser regression: emulate a controller's physical translation while
+  // preserving its grab's initial world position. The public page has no hook.
+  window.__rigyTestControllerDrag=(id,offset) => {
+    if(!posePins)throw new Error('Pose solver not ready');
+    const limb=posePins.limbs.find(l=>l.id===id);
+    if(!limb)throw new Error('No handle: '+id);
+    if(!Array.isArray(offset)||offset.length!==3||offset.some(x=>!Number.isFinite(x)))throw new Error('Finite XYZ offset required');
+    avatar.updateMatrixWorld(true);
+    const handle=posePins.handles.get(id);
+    const before=handle.getWorldPosition(new THREE.Vector3());
+    const fake=new THREE.Group();
+    fake.position.copy(before).add(new THREE.Vector3(0.015,0,0));
+    scene.add(fake);fake.updateWorldMatrix(true,false);
+    const nearest=posePins.pickNearby(fake);
+    if(nearest?.id!==id)throw new Error('Controller failed to select '+id+'; found '+nearest?.id);
+    posePins.begin(limb,fake);
+    fake.position.add(new THREE.Vector3(...offset));
+    fake.updateWorldMatrix(true,false);
+    posePins.update();
+    posePins.release(fake);
+    scene.remove(fake);
+    avatar.updateWorldMatrix(true,true);
+    const after=handle.getWorldPosition(new THREE.Vector3());
+    const pin=posePins.pins.get(id);
+    const goal=pin?.targetLocal?limb.reference.localToWorld(pin.targetLocal.clone()):null;
+    return {id,kind:limb.kind,before:before.toArray(),after:after.toArray(),
+      goal:goal?.toArray()||null,moved:before.distanceTo(after),
+      deviation:goal?after.distanceTo(goal):null,pinCount:posePins.pins.size};
+  };
+  window.__rigyTestReset=()=>posePins?.reset();
 }
 let previous=0;
 renderer.setAnimationLoop((time,frame)=>{

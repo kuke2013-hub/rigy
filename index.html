@@ -34,11 +34,11 @@ input[type=checkbox]{accent-color:#8bdac5}
   <div id="status" role="status" aria-live="polite">Loading character and skeleton…</div>
   <div class="settings">
     <label>Animation speed <input id="animationSpeed" type="range" min="0.15" max="2" step="0.05" value="1" aria-label="Animation speed"></label>
-    <label><span>Show grab points</span><input id="showHandles" type="checkbox" checked></label>
+    <label><span>Nearby edit points</span><input id="showHandles" type="checkbox" checked></label>
     <label>Load another FBX / GLB <input id="assetFile" type="file" accept=".fbx,.glb,.gltf,model/gltf-binary" aria-label="Load rigged model"></label>
   </div>
-  <p class="hint"><strong>Quest:</strong> Aim the controller ray at a <span style="color:#76e1d1">cyan wrist/ankle</span> point, hold the <strong>trigger</strong> and move the controller to lift the limb. <span style="color:#f6b874">Orange elbow/knee</span> points control bending. Release the trigger to keep the pose. <strong>Side grips</strong> still move/rotate the entire character; both grips still scale it.<br><strong>Desktop:</strong> click and drag a point; drag empty space to orbit, scroll to zoom.<br><span class="mini">Experimental, not medically or Quest validated · original Zelda v13 controller preserved.</span></p>
+  <p class="hint"><strong>Quest:</strong> Move either controller <strong>within 30 cm</strong> of a joint to reveal its edit point. Hold the <strong>trigger</strong> and physically drag the <span style="color:#76e1d1">cyan wrist/ankle</span> or <span style="color:#f6b874">orange elbow/knee</span> point in 3D. Release the trigger to keep the pose. <strong>Side grips</strong> still move/rotate the entire character; both grips still scale it.<br><strong>Desktop:</strong> hover to reveal a point, then click and drag it; drag empty space to orbit, scroll to zoom.<br><span class="mini">Experimental, not medically or Quest validated · original Zelda v13 controller preserved.</span></p>
 </section>
-<div id="footer">RIGY 0.3 · ANIMATION + PERSISTENT POSE · QUEST MR</div>
-<script type="module" src="./index-app.js?v=rigy-0.3"></script>
+<div id="footer">RIGY 0.4 · ANIMATION + PERSISTENT POSE · QUEST MR</div>
+<script type="module" src="./index-app.js?v=rigy-0.4"></script>
 </body></html>
