@@ -612,8 +612,9 @@ function solveWithMiddlePole(limb,endpoint,requestedPole,animatedUpper){
  const root=worldPos(limb.upper),middle=worldPos(limb.hinge);
  const endNow=worldPos(limb.effector);
  const a=root.distanceTo(middle),b=middle.distanceTo(endNow);
- const wanted=projectedMiddleJoint(root,endpoint,a,b,requestedPole,middle);
- if(!wanted){solveEffector(limb,endpoint,animatedUpper);return;}
+ const projected=projectedMiddleJoint(root,endpoint,a,b,requestedPole,middle);
+ if(!projected){solveEffector(limb,endpoint,animatedUpper);return;}
+ const wanted=V().set(projected.x,projected.y,projected.z);
  const joints=[limb.upper,limb.hinge];
  const snapshot=()=>joints.map(b=>b.quaternion.clone());
  const restore=pose=>{joints.forEach((b,i)=>b.quaternion.copy(pose[i]));limb.upper.updateMatrixWorld(true);};
