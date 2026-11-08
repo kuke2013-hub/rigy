@@ -1,3 +1,13 @@
+# Rigy 0.2 — animated character + persistent limb posing
+
+**New interactive entry page:** [`index.html`](./index.html) • [Complete implementation notes](./ANIMATED_RIG_README.md) • [Uploaded FBX source manifest](./models/standing-idle/manifest.json) • [Deployment status](../../actions/workflows/pages.yml)
+
+The uploaded **Standing W_Briefcase Idle.fbx** has been preserved byte-for-byte as SHA-verified model chunks. Its Mixamo animation loops while wrist/ankle IK targets and elbow/knee bend pins persist. **Quest trigger** adjusts individual joints; the **unchanged Zelda v13 side grips** still move and scale the whole character. This is an experimental prototype: joint frames, full anatomical coupling, rendering and Quest controls have not been hardware validated. The file references a missing external texture, so appearance may be untextured.
+
+**Hosting:** the root page is ready for GitHub Pages but **Pages is not enabled yet**. Repository administrators must visit [Settings → Pages](../../settings/pages), select **GitHub Actions** as the build source, then rerun the [deployment workflow](../../actions/workflows/pages.yml). The expected address, once deployment succeeds, is `https://kuke2013-hub.github.io/rigy/`. This is currently **not a verified live link**. GitHub Pages for a private repository may require a paid GitHub plan.
+
+---
+
 # Rigy — VRPod anatomical skeleton laboratory
 
 **Canonical development repository:** `https://github.com/kuke2013-hub/rigy`  
