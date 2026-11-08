@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {armTorsoIntrusion} from '../../anatomy/torso-collision.mjs';
 import {projectShoulderDirection,SHOULDER_ENVELOPE_V07,SHOULDER_GH_ENVELOPE_V07,shoulderGirdleCarryDegrees} from '../../anatomy/shoulder-envelope.mjs';
 
 /**
@@ -195,6 +196,60 @@ function constrainUpperArm(limb,animatedQ){
    rotateTo(toWorld(state.frame,total));
   }
  }
+}
+
+/**
+ * Evaluate the animated arm against a conservative torso exclusion volume.
+ * A pose can satisfy shoulder ROM but still drive a forearm THROUGH the chest.
+ * We test both humerus and forearm segments, not merely the wrist endpoint.
+ */
+function torsoIntrusion(limb){
+ const context=limb.shoulderContext;
+ const leftShoulder=worldPos(context.leftShoulder),rightShoulder=worldPos(context.rightShoulder);
+ const origin=leftShoulder.clone().add(rightShoulder).multiplyScalar(.5);
+ const frame=torsoBasis(context);
+ const torsoHeight=Math.abs(worldPos(context.hips).sub(origin).dot(frame.up));
+ const shoulderSpan=leftShoulder.distanceTo(rightShoulder);
+ const local=p=>{
+  const d=p.clone().sub(origin);
+  return {x:d.dot(frame.left),y:d.dot(frame.up),z:d.dot(frame.forward)};
+ };
+ return armTorsoIntrusion(
+  local(worldPos(limb.upper)),local(worldPos(limb.hinge)),
+  local(worldPos(limb.effector)),{shoulderSpan,torsoHeight});
+}
+/**
+ * Reject the penetrating portion of a proposed pose by blending back towards
+ * the corresponding animation-frame joint rotations. Unlike an extra angular
+ * limit, this constraint depends on where the torso actually is, and can
+ * preserve natural arm-crossing when the arm travels IN FRONT of the chest.
+ * The FBX is a simplified proxy, not a precise collision mesh.
+ */
+function restrictTorsoPenetration(limb,animatedPose){
+ if(!animatedPose)return 0;
+ const bones=[limb.clavicle,limb.upper,limb.hinge];
+ const posed=bones.map(b=>b.quaternion.clone());
+ const set=(t)=>{
+  for(let i=0;i<bones.length;i++)bones[i].quaternion.copy(animatedPose[i]).slerp(posed[i],t);
+  limb.clavicle.updateMatrixWorld(true);
+ };
+ const candidate=torsoIntrusion(limb);
+ set(0);
+ const baseline=torsoIntrusion(limb);
+ set(1);
+ // Ignore measurement noise and never make an existing animation collision
+ // meaningfully worse. A lower threshold is used for an already-clear pose.
+ const tolerance=Math.max(.025,baseline+.008);
+ if(candidate<=tolerance)return candidate;
+ let safe=0,blocked=1;
+ for(let i=0;i<10;i++){
+  const mid=(safe+blocked)*.5;
+  set(mid);
+  if(torsoIntrusion(limb)<=tolerance)safe=mid;
+  else blocked=mid;
+ }
+ set(safe);
+ return torsoIntrusion(limb);
 }
 
 function hingeFlexAngle(limb, axisWorld){
@@ -644,6 +699,7 @@ export class AnimatedPosePins {
     withinEnvelope:!measured.clamped,
     goalElevationDeg,
     girdleDeltaDeg:l.animatedShoulderLocal?l.clavicle.quaternion.angleTo(l.animatedShoulderLocal)/RAD:0,
+    torsoIntrusion:torsoIntrusion(l),
     wristGoalErrorMetres:pin?.targetLocal?
       worldPos(l.effector).distanceTo(l.reference.localToWorld(pin.targetLocal.clone())):null
    };
@@ -732,6 +788,12 @@ export class AnimatedPosePins {
    for(const l of this.limbs.filter(l=>l.kindName==='elbow'))
     l.animatedShoulderLocal=animatedShoulder.get(l.clavicle);
    const animatedUpper=new Map(this.limbs.map(l=>[l.upper,l.upper.quaternion.clone()]));
+   // Keep a non-procedural collision-safe reference for all animated arms.
+   const baseArmRotations=new Map();
+   for(const arm of this.limbs.filter(l=>l.kind==='effector'&&l.kindName==='elbow')){
+    baseArmRotations.set(arm.side,[arm.clavicle.quaternion.clone(),
+      arm.upper.quaternion.clone(),arm.hinge.quaternion.clone()]);
+   }
    const animatedBody=new Map();
    for(const h of this.bodyHandles)for(const bone of h.chain||[])animatedBody.set(bone,bone.quaternion.clone());
    // Character's animated hip bob and root translation are compensated by the
@@ -850,6 +912,19 @@ export class AnimatedPosePins {
     const p=this.pins.get(limb.id);if(!p?.targetLocal)continue;
     const goal=limb.reference.localToWorld(p.targetLocal.clone());
     solveEffector(limb,goal,animatedUpper.get(limb.upper));
+   }
+   // Enforce segment-vs-torso exclusion AFTER all wrist/elbow manipulation.
+   // This also checks an existing pinned arm as the torso animates beneath it.
+   for(const limb of this.limbs.filter(l=>l.kindName==='elbow'&&l.kind==='effector')){
+    if(this.pins.has(limb.id)||this.pins.has(limb.id.replace('-wrist','-elbow'))){
+     restrictTorsoPenetration(limb,baseArmRotations.get(limb.side));
+     const lock=this.armPoseLocks.get(limb.side);
+     if(lock&&!armSolveSides.has(limb.side)){
+      lock.clavicle.copy(limb.clavicle.quaternion);
+      lock.upper.copy(limb.upper.quaternion);
+      lock.hinge.copy(limb.hinge.quaternion);
+     }
+    }
    }
    // Capture the solved pose as a local, torso-following constraint; the
    // next animation frame will restore it instead of fighting with IK.

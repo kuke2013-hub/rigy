@@ -57,6 +57,22 @@ try{
       assert(error<0.015,`${id}: foot sliding at ${sampleTime}s: ${error.toFixed(4)}m`);
   }
   assert.deepEqual(errors,[],'No uncaught browser runtime exception');
+  // v0.9 regression: a controlled wrist must not drive the forearm THROUGH
+  // the trunk even if its shoulder angular measurements look permissible.
+  for(const side of ['left','right']){
+    const id=side+'-wrist';
+    await page.evaluate(()=>window.__rigyTestReset());
+    await page.waitForTimeout(100);
+    const baseline=(await page.evaluate(()=>window.__rigyDiagnostics())).shoulderDiagnostics[id].torsoIntrusion;
+    const evaluated=await page.evaluate(id=>window.__rigyTestTorsoTarget(id),id);
+    console.log('TORSO BLOCK',id,JSON.stringify({baseline,measured:evaluated.shoulder.torsoIntrusion}));
+    assert(Number.isFinite(evaluated.shoulder.torsoIntrusion),'collision metric finite');
+    assert(evaluated.shoulder.torsoIntrusion<=Math.max(.036,baseline+.02),
+      id+' penetrated torso during inward wrist drag');
+    const later=await page.evaluate(()=>window.__rigyTestJumpAnimation(5.1));
+    assert(later.shoulderDiagnostics[id].torsoIntrusion<=Math.max(.04,baseline+.03),
+      id+' penetrated torso after animated body moved');
+  }
   // Torso-referenced test verifies elevation that the user can genuinely
   // reach; a world-Y drag from a backward-facing animation is not calibrated.
   for(const side of ['left','right']){

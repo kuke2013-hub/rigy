@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/check-rig.yml
       - index-app.js
+      - anatomy/**
       - index.html
       - rigy/animated/**
       - tests/**
@@ -29,6 +30,8 @@ jobs:
           node --check rigy/animated/animation-pins.js
           node --test tests/model-loader.test.mjs
           node --test tests/shoulder-envelope.test.mjs
+          node --test tests/torso-collision.test.mjs
+          node --check anatomy/torso-collision.mjs
           node --check anatomy/shoulder-envelope.mjs
   browser:
     runs-on: ubuntu-latest

@@ -4,7 +4,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGrabPhysics } from './VR_OBJECTS_TEMPLATE/physics-grab.js?v=template-1';
-import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-0.8';
+import { AnimatedPosePins } from './rigy/animated/animation-pins.js?v=rigy-0.9';
 import { loadBundledFbx } from './rigy/animated/model-bundle.js?v=rigy-0.3';
 import { OBJECT_CONFIG } from './VR_OBJECTS_TEMPLATE/config.js?v=template-1';
 
@@ -399,6 +399,19 @@ if(new URLSearchParams(location.search).has('rigy_test')) {
     mixer.setTime(time);
     posePins.update();
     return window.__rigyDiagnostics();
+  };
+  window.__rigyTestTorsoTarget = id=>{
+    if(!posePins)throw new Error('Pose solver not ready');
+    const limb=posePins.limbs.find(l=>l.id===id&&l.kind==='effector'&&l.kindName==='elbow');
+    if(!limb)throw new Error('Unknown arm '+id);
+    const b=limb.shoulderContext;
+    const center=b.leftShoulder.getWorldPosition(new THREE.Vector3())
+      .add(b.rightShoulder.getWorldPosition(new THREE.Vector3())).multiplyScalar(.5);
+    // Intentionally aim a hand at the middle of the upper chest.
+    center.lerp(b.hips.getWorldPosition(new THREE.Vector3()),.32);
+    posePins.storeTarget(limb,center);
+    posePins.update();
+    return {goal:center.toArray(),shoulder:posePins.shoulderDiagnostics()[id]};
   };
   window.__rigyTestReset=()=>posePins?.reset();
 }
