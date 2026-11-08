@@ -76,3 +76,31 @@ export function projectHipFootGoal({x,y,z},side,maxReach,limits=HIP_ENVELOPE_V09
  const len=Math.min(mag,maxReach);
  return {x:h.x*len,y:h.y*len,z:h.z*len,clamped:h.clamped||mag>maxReach};
 }
+/**
+ * Coarse muscle/fat VOLUME proxy for the two thighs: short cylinders from
+ * 20% of hip-knee span through the knee, sampled in world metres. This does
+ * NOT simulate tissue, fat percentages, deformation or physical force.
+ * Returns estimated capsule overlap depth in metres. These radii are
+ * engineering parameters; actual geometry should replace the proxy later.
+ */
+export function thighSoftTissueOverlap(a0,a1,b0,b1,radiusA,radiusB,clearance=.015){
+ const vectors=[a0,a1,b0,b1];
+ if(!vectors.every(v=>v&&[v.x,v.y,v.z].every(Number.isFinite))||
+    ![radiusA,radiusB,clearance].every(Number.isFinite)||
+    radiusA<=0||radiusB<=0||clearance<0)throw new TypeError('Invalid thigh volumes');
+ let min=Infinity;
+ const samples=12;
+ for(let i=0;i<=samples;i++){
+  const t=.20+.80*i/samples;
+  const ax=a0.x+(a1.x-a0.x)*t,ay=a0.y+(a1.y-a0.y)*t,az=a0.z+(a1.z-a0.z)*t;
+  for(let j=0;j<=samples;j++){
+   const u=.20+.80*j/samples;
+   const dx=ax-(b0.x+(b1.x-b0.x)*u);
+   const dy=ay-(b0.y+(b1.y-b0.y)*u);
+   const dz=az-(b0.z+(b1.z-b0.z)*u);
+   const distance=Math.hypot(dx,dy,dz);
+   if(distance<min)min=distance;
+  }
+ }
+ return Math.max(0,radiusA+radiusB+clearance-min);
+}

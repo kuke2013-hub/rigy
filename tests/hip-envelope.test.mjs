@@ -40,3 +40,11 @@ test('bad directions rejected',()=>{
  assert.throws(()=>projectHipDirection({x:0,y:-1,z:0},'neither'),TypeError);
  assert(HIP_ENVELOPE_V09.highFlexionAbductionReduction>0);
 });
+import {thighSoftTissueOverlap} from '../anatomy/hip-envelope.mjs';
+test('thick thigh capsules do not occupy same swept volume',()=>{
+ const leftA={x:.09,y:1,z:0},leftB={x:.12,y:.60,z:0};
+ const rightA={x:-.09,y:1,z:0},rightB={x:-.12,y:.60,z:0};
+ assert.equal(thighSoftTissueOverlap(leftA,leftB,rightA,rightB,.045,.045),0);
+ const intruding={x:.085,y:.60,z:0};
+ assert(thighSoftTissueOverlap(leftA,leftB,rightA,intruding,.045,.045)>.02);
+});

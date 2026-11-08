@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {HIP_ENVELOPE_V09,projectHipDirection,projectHipFootGoal} from '../../anatomy/hip-envelope.mjs';
+import {HIP_ENVELOPE_V09,projectHipDirection,projectHipFootGoal,thighSoftTissueOverlap} from '../../anatomy/hip-envelope.mjs';
 import {armTorsoIntrusion} from '../../anatomy/torso-collision.mjs';
 import {projectShoulderDirection,SHOULDER_ENVELOPE_V07,SHOULDER_GH_ENVELOPE_V07,shoulderGirdleCarryDegrees} from '../../anatomy/shoulder-envelope.mjs';
 
@@ -80,7 +80,8 @@ function makeMixamoMaps(avatar,profiles) {
   limbs.push({id:`${side.toLowerCase()}-ankle`,kind:'effector',label:`${side} ankle · lift foot`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
   limbs.push({id:`${side.toLowerCase()}-knee`,kind:'bend',label:`${side} knee · bend`,reference:avatar.parent||avatar,upper:thigh,hinge:shin,effector:foot,lowerEnd:foot,kindName:'knee',maxBend:kneeMax,maxSwing:76});
  }
- const hipContext={hips,spine,leftHip:pickBone(avatar,'LeftUpLeg'),rightHip:pickBone(avatar,'RightUpLeg')};
+ const hipContext={hips,spine,leftHip:pickBone(avatar,'LeftUpLeg'),rightHip:pickBone(avatar,'RightUpLeg'),
+  leftKnee:pickBone(avatar,'LeftLeg'),rightKnee:pickBone(avatar,'RightLeg')};
  for(const l of limbs.filter(l=>l.kindName==='knee')) {
   l.side=l.id.startsWith('left-')?'left':'right';
   l.hipContext=hipContext;
@@ -131,18 +132,49 @@ function hipState(limb){
  const evaluated=projectHipDirection({x:dir.dot(frame.left),y:dir.dot(frame.up),z:dir.dot(frame.forward)},limb.side);
  return {frame,dir,evaluated};
 }
+/** Coarse thigh muscle/fat collision proxy; bounded capsules, not a tissue simulation. */
+function thighIntrusion(limb){
+ const other=limb.side==='left'
+  ?[limb.hipContext.rightHip,limb.hipContext.rightKnee]
+  :[limb.hipContext.leftHip,limb.hipContext.leftKnee];
+ const [a0,a1,b0,b1]=[worldPos(limb.upper),worldPos(limb.hinge),worldPos(other[0]),worldPos(other[1])];
+ const lengthA=a0.distanceTo(a1),lengthB=b0.distanceTo(b1);
+ const radiusA=clamp(lengthA*0.115,0.028,0.065);
+ const radiusB=clamp(lengthB*0.115,0.028,0.065);
+ return thighSoftTissueOverlap(a0,a1,b0,b1,radiusA,radiusB,HIP_ENVELOPE_V09.softTissueClearanceMetres);
+}
 function constrainUpperLeg(limb){
  if(!limb.hipContext)return;
+ const bone=limb.upper;
  const state=hipState(limb),p=state.evaluated;
- if(!p.clamped)return;
- const desired=state.frame.left.clone().multiplyScalar(p.x)
+ if(p.clamped){
+  const desired=state.frame.left.clone().multiplyScalar(p.x)
    .addScaledVector(state.frame.up,p.y)
    .addScaledVector(state.frame.forward,p.z).normalize();
- if(state.dir.distanceToSquared(desired)<1e-12)return;
- const delta=Q().setFromUnitVectors(state.dir,desired);
- const bone=limb.upper;
- bone.quaternion.copy(worldQ(bone.parent).invert().multiply(delta.multiply(worldQ(bone)))).normalize();
- bone.updateMatrixWorld(true);
+  if(state.dir.distanceToSquared(desired)>=1e-12){
+   const delta=Q().setFromUnitVectors(state.dir,desired);
+   bone.quaternion.copy(worldQ(bone.parent).invert().multiply(delta.multiply(worldQ(bone)))).normalize();
+   bone.updateMatrixWorld(true);
+  }
+ }
+ // Avoid growing a thigh intersection once the rig has a previously valid pose.
+ // The last feasible local thigh orientation is relative to the animated pelvis.
+ const overlap=thighIntrusion(limb);
+ if(overlap>0.006&&limb.lastSafeHipQuaternion){
+  const desired=bone.quaternion.clone();
+  const safe=limb.lastSafeHipQuaternion.clone();
+  bone.quaternion.copy(safe);bone.updateMatrixWorld(true);
+  if(thighIntrusion(limb)<=0.006){
+   let lo=0,hi=1;
+   for(let i=0;i<10;i++){
+    const mid=(lo+hi)/2;
+    bone.quaternion.copy(safe).slerp(desired,mid);bone.updateMatrixWorld(true);
+    if(thighIntrusion(limb)<=0.006)lo=mid;else hi=mid;
+   }
+   bone.quaternion.copy(safe).slerp(desired,lo);bone.updateMatrixWorld(true);
+  }
+ }
+ if(thighIntrusion(limb)<=0.006)limb.lastSafeHipQuaternion=bone.quaternion.clone();
 }
 
 function shoulderState(limb){
@@ -738,7 +770,8 @@ export class AnimatedPosePins {
     requestedFlexionDeg:p.requestedFlexionDeg,requestedAbductionDeg:p.requestedAbductionDeg,
     withinEnvelope:!p.clamped,
     footErrorMetres:anchor?worldPos(limb.effector).distanceTo(
-      this.anchorRoot.localToWorld(anchor.targetLocal.clone())):null};
+      this.anchorRoot.localToWorld(anchor.targetLocal.clone())):null,
+    thighOverlapMetres:thighIntrusion(limb)};
   }
   return result;
  }
