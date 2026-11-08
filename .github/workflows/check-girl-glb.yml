@@ -1,0 +1,53 @@
+name: Verify Girl Blender GLB interactive preview
+on:
+  push:
+    branches: [feature/girl-blender-glb-staging]
+    paths:
+      - '.github/workflows/check-girl-glb.yml'
+      - 'tests/girl-glb-browser.test.mjs'
+      - 'objects/girl-blender/**'
+      - 'models/girl-blender/**'
+      - 'index-app.js'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate current source and script
+        run: |
+          python3 VERIFY_BACKUP.py
+          node --check index-app.js
+          node --check tests/girl-glb-browser.test.mjs
+          node --check rigy/animated/pelvis-pose-engine.js
+      - name: Verify binary is exactly the user-uploaded GLB
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, struct
+          p=Path('models/girl-blender/gilr_blender_small_textured.glb')
+          b=p.read_bytes()
+          assert len(b)==73779892 and b[:4]==b'glTF'
+          assert struct.unpack('<II',b[4:12])==(2,len(b))
+          assert hashlib.sha256(b).hexdigest()=='989700df8b0aceb761eedbbfd30e44b97a822f39658c4b24bddb6e70b93e8c7c'
+          print('Verified GLB bytes:',len(b))
+          PY
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright headless Chromium
+        run: |
+          npm install --no-save playwright@1.65.0
+          npx playwright install --with-deps chromium
+      - name: Load new GLB through its actual nested character page
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/rigy-girl-http.log 2>&1 &
+          sleep 3
+          node tests/girl-glb-browser.test.mjs
