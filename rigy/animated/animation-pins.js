@@ -942,6 +942,22 @@ export class AnimatedPosePins {
     const worst=contactErrors.reduce((m,d)=>Math.max(m,d.length()),0);
     if(worst<0.004)break; // 4mm contact accuracy in this rig's model space
    }
+   // During an extreme controller FOOT drag, stop at the physically reached
+   // location. Do not plant an unreachable ankle point 25cm away from the
+   // actual skinned foot: that creates sliding when the drag is released.
+   // Existing stationary foot anchors are never rewritten by torso edits.
+   const draggingFoot=this.active?.limb;
+   if(draggingFoot?.kind==='effector'&&draggingFoot.kindName==='knee'){
+    const anchor=this.footAnchors.get(draggingFoot.id);
+    const error=worldPos(draggingFoot.effector).distanceTo(
+      this.anchorRoot.localToWorld(anchor.targetLocal.clone()));
+    if(error>0.012){
+     const accepted=this.anchorRoot.worldToLocal(worldPos(draggingFoot.effector));
+     anchor.targetLocal.copy(accepted);
+     const pin=this.pins.get(draggingFoot.id);
+     if(pin?.targetLocal)pin.targetLocal.copy(accepted);
+    }
+   }
    // If an arm is already posed and the user is not dragging it, restore
    // its exact local shoulder / upper-arm / elbow rotations on every frame.
    // This suppresses ONLY those three animation channels, while the animated
